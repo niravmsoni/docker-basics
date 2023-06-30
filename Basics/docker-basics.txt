@@ -65,3 +65,8 @@ Docker File:
 	
 	FROM nginx:stable-alpine
 	COPY index.html /use/share/nginx/html
+
+Docker calls this entire workflow:
+	BUILD
+	SHIP
+	RUN
