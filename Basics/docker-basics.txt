@@ -1,0 +1,67 @@
+Docker = 
+	Runs all apps.
+	Isolated environment. 
+
+Within each container have 
+		- Their own IP
+		- Disk
+		- Windows Registry
+
+Containers:
+	Containers are basically processes
+			
+	Virtualization happening at Process Level.
+	
+	We can run multiple docker containers on the same machine
+	
+	On the machine where multiple containers are running, we could see each processes in the Task Manager
+	But, if we look inside the container, we'd only see processes specific to those containers
+	
+	For ex: We can have different versions of .NET running on different containers without impacting each other
+	Key points:
+		Process Virtualization
+		Isolated Workloads
+		Shared OS
+		
+	The container needs to know the OS beforehand. For ex: Windows container can only run on the machine based on Windows OS
+	
+	Container Image = Portable unit. We can use images to spin up containers
+	Anyone who has access to the image can run the container on their machine and it will run in the same manner(Provided OS matches)
+
+Images:
+
+	For managing our own application to run in a container, we need to start with a Docker File
+	The image lives on the machine where the image was built
+	For other people to use our image, we need to push it to a registry.
+	Registry could be:
+		Private - ACR/ECR etc.
+		Public - DockerHub
+
+Docker File: 
+	Executable Script that tells us how to install components of application
+	For ex:	
+		Based on Windows Server Core > Have IIS > Install .NET Runtime and then copy my application binaries
+	We use this docker file in docker image build command to build an image
+	Standard script format
+	
+	Windows Sample:
+	
+	FROM docker4dotnet/aspnet:4.8
+	COPY MyApp.msi
+	RUN msiexec /i MyApp.msi /qn
+	
+	FROM 
+		Every docker image has something known as a Base image. Whatever we specify in the From block will be treated as the base image.
+		In this example, it gives me ASP.NET 4.8 runtime out of the box. That incldues IIS and other low level dependencies. We don't need to worry about it.
+		
+	COPY
+		We're copying MSI/Dlls from our own app into the docker file
+		Typically this would be source code/binaries from our project.
+		
+	RUN
+		Execute some commands and save results in the docker image
+		
+	Linux Sample:
+	
+	FROM nginx:stable-alpine
+	COPY index.html /use/share/nginx/html
