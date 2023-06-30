@@ -1,0 +1,12 @@
+sInstalled Docker Desktop here - https://www.docker.com/products/docker-desktop/
+We have provision to run images on both Windows/Linux OS through Docker Desktop.
+
+Selected "Switch to Windows Container" to make sure all containers run on Windows OS.
+
+Command 
+    - docker version
+        - Gives us the details about docker client and docker server running on the machine
+
+Containers can be run in multiple ways:
+    1. Task container to do one thing and exit
+        - This type of containers just do one thing and then are destroyed
