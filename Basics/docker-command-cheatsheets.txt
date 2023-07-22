@@ -9,8 +9,10 @@ docker container ls --all
 docker container run --interactive --tty --rm <ContainerName>
     - Run Interactive container and connect to console of container. 
 docker container top <ContainerName>
+docker top <ContainerName> - Could drop container keyword
     - Tells us top processes running inside containers
 docker container logs <ContainerName>
+docker logs <ContainerName> - Could drop container keyword
     - Displays Logs emitted by container
 docker container exec <ConatinerName>
     - Could execute commands within the container. For ex: SQL Query.

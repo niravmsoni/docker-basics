@@ -1,0 +1,13 @@
+For running Linux on top of a Windows machine, we have 2 options:
+    1. Hyper-V - Provisions a VM - This are available for older versions of Win10
+    2. WSL = Windows subsystem for Linux - Much faster and newer
+
+With docker, there's no difference of commands when it comes to Windows/Linux
+
+docker container run docker4dotnet/alpine hostname
+    - Downloads images locally and runs container, outputs the hostname & the container exits
+
+IMP - Difference between Linux/Windows containers.
+    If a container is running on Windows, there are a lot of background processes that Windows server creates to manage the container runtime
+    Whereas with Linux, only those processes which we spin up will run.
+    Hence Linux is more LIGHT-WEIGHT
