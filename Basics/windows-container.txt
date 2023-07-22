@@ -1,12 +1,28 @@
-sInstalled Docker Desktop here - https://www.docker.com/products/docker-desktop/
+Installed Docker Desktop here - https://www.docker.com/products/docker-desktop/
 We have provision to run images on both Windows/Linux OS through Docker Desktop.
 
 Selected "Switch to Windows Container" to make sure all containers run on Windows OS.
 
 Command 
     - docker version
-        - Gives us the details about docker client and docker server running on the machine
+        - Gives us the details about docker client and docker server(Windows service) running on the machine
 
-Containers can be run in multiple ways:
-    1. Task container to do one thing and exit
-        - This type of containers just do one thing and then are destroyed
+Containers can be run in different ways:
+    1. Single Task container
+        - This type of containers just perform a task and then it'll end
+        - Useful for automation(Azure CLI commands > One time execution etc. )
+    
+    Command:
+        - docker container run docker4dotnet/nanoserver hostname
+        - Downloads 
+    2. Long Running container
+        - Long running applications
+        - If we download an image from dockerhub, we could use interactive session with powershell to explore the image, its Windows features, services etc.
+        - docker container run --interactive --tty --rm docker4dotnet/servercore powershell
+            - Spin up powershell from docker4dotnet/servercore from container
+            - --interactive --tty - Gives me an interactive session
+            - --rm - When we stop/remove container, remove the interactive session as well for me. This will also delete the image for me
+            - exit - When done, this will leave session from container and bring us back to our machine
+
+By Default - Upon stopping a container, the image still PERSISTS ON THE LOCAL MACHINE. Docker does not remove the image
+If we specify --rm switch, image also will be deleted.

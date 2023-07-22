@@ -1,0 +1,10 @@
+Commands Cheatsheet
+
+docker version 
+    - Shows version details for Docker components
+docker container run <ContainerName> 
+    - Runs container
+docker container ls --all 
+    - List all containers
+docker container run --interactive --tty --rm <ContainerName>
+    - Run Interactive container and connect to console of container. 
