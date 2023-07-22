@@ -8,3 +8,13 @@ docker container ls --all
     - List all containers
 docker container run --interactive --tty --rm <ContainerName>
     - Run Interactive container and connect to console of container. 
+docker container top <ContainerName>
+    - Tells us top processes running inside containers
+docker container logs <ContainerName>
+    - Displays Logs emitted by container
+docker container exec <ConatinerName>
+    - Could execute commands within the container. For ex: SQL Query.
+    - Example: docker container exec sql `powershell "Invoke-SqlCmd -Query 'SELECT GETDATE()'"
+docker container rm
+    - Removes container.
+    - Could apply force swtich to delete container even if its still running

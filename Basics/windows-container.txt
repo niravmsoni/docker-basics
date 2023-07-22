@@ -18,7 +18,7 @@ Containers can be run in different ways:
     2. Long Running container
         - Long running applications
         - If we download an image from dockerhub, we could use interactive session with powershell to explore the image, its Windows features, services etc.
-        - docker container run --interactive --tty --rm docker4dotnet/servercore powershell
+        - Command -  docker container run --interactive --tty --rm docker4dotnet/servercore powershell
             - Spin up powershell from docker4dotnet/servercore from container
             - --interactive --tty - Gives me an interactive session
             - --rm - When we stop/remove container, remove the interactive session as well for me. This will also delete the image for me
@@ -26,3 +26,30 @@ Containers can be run in different ways:
 
 By Default - Upon stopping a container, the image still PERSISTS ON THE LOCAL MACHINE. Docker does not remove the image
 If we specify --rm switch, image also will be deleted.
+
+    3. Background/Detached Containers
+        - This is how most of our apps would run
+        - Command - docker container run --detach --name sql ` --env sa_password=DockerCon!!! --isolation=process `docker4dotnet/sql-server:2017
+            - --detach = Opposite of interactive
+            - Start container and put it in background
+            - --name - With this switch, we can give it a containerName
+            - --env - Pass Environment variables
+            - In this case, the image requires SQL Server's password to be set in an environment variable namely "sa_password"
+
+        -By default, Docker generates a random name and a random container Id
+
+        - WE could also execute commands inside a container. For ex: If we spin up SQL Server and want to execute a select query, we could do it using exec commands
+        - docker container exec sql `powershell "Invoke-SqlCmd -Query 'SELECT GETDATE()'"
+
+IMP
+    Eariler, we used --interactive --tty. This is a fullform of the command.
+    We also have shorthand commands to achieve the same thing.
+    For interactive command we use 
+    --interactive --tty == -it
+
+- Clean up all containers
+docker container rm --force `
+  $(docker container ls --quiet --all)
+We don't need any of these containers, so you can remove them all
+
+The -force flag removes containers even if they're still running:
