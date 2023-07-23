@@ -20,3 +20,15 @@ docker container exec <ConatinerName>
 docker container rm
     - Removes container.
     - Could apply force swtich to delete container even if its still running
+docker image build --tag <TagName> <Location>
+docker build -t <TagName> <Location> - Short form
+    - Build image from DockerFile
+    - --tag - With tag switch, we could tag it with whatever name we want
+    - Location could be where the content lives. If you're within the root folder of the directory where your dockerFile is, we could simply specify a '.'
+    - . means inside this directory
+docker container run --detach --publish 8081:80 `--name app hostname-app`
+docker run -d -p 8080:80   `--name <appName>' - Short form
+    - With publish switch, we could do Port mapping.
+    - 8081 = Port on Host and 80 = Port inside the Docker container
+docker container port <ContainerName>
+    - Outputs the port bindings for the specified container

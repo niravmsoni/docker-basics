@@ -1,0 +1,106 @@
+FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8
+
+COPY default.aspx C:/inetpub/wwwroot
+
+Command Explanation:
+FROM 
+    - Specifies image to use as starting point for this image[Base Image]
+    - In this case its dotnet 4.8 framework
+COPY
+    - Here, we're copying the default.aspx from the folder where this docker file exists and are 
+    - Placing this in c:/inetpub/wwwroot WITHIN THE CONTAINER
+
+This base image already has IIS and ASP.NET 4.8 installed
+
+Command execution - docker image build --tag hostname-app .
+Each line in Docker file is specified as a "Step"
+
+By default, container is locked to not accept any network traffic. 
+So, for exposing that to the network, we need to do PORT-MAPPING
+
+We ran 1 instance of the container for the hostname-app. 
+We could run a loop and assign a random source port to map to target port of 80 using this loop.
+
+
+for ($i=0; $i -lt 5; $i++) {
+  & docker run --detach --publish-all --name "app-$i" --isolation=process hostname-app
+}
+
+publish-all -Publishes container port to random port on host
+- Useful for local testing.
+
+Now we have 5 containers running and all listening to different source port assigned randomly by publish-all command.
+
+With below command, we could make request to each of those containers & they'll load up on browser
+
+for ($i=0; $i -lt 5; $i++) {
+  $address = $(docker port "app-$i" 80).Replace('0.0.0.0', 'localhost')
+  start "http://$address"
+}
+
+Get-Process -Name w3wp | select Id, Name, WorkingSet, Cpu
+
+- This is to show how much memory and CPU is being used by containers. Goes on to show HOW LIGHTWEIGHT containers are.
+
+- By default, the first time loading takes up sometime. This is due to the fact that IIS does not start its worker process(w3wp.exe) till the first request kicks in.
+- Also, we do not see any logs being sent out from the image. This is because IIS logs are not pushed to console.
+- They're written to a different Location
+
+===========================
+# escape=`
+FROM mcr.microsoft.com/windows/servercore/iis:windowsservercore
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+RUN Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' -filter 'system.applicationHost/log' -name 'centralLogFileMode' -value 'CentralW3C'; `
+    Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' -filter 'system.applicationHost/log/centralW3CLogFile' -name 'truncateSize' -value 4294967295; `
+    Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' -filter 'system.applicationHost/log/centralW3CLogFile' -name 'period' -value 'MaxSize'; `
+    Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' -filter 'system.applicationHost/log/centralW3CLogFile' -name 'directory' -value 'c:\iislog'
+
+ENTRYPOINT ["powershell", "C:\\start.ps1"]
+
+COPY start.ps1 C:\
+COPY index.html C:\inetpub\wwwroot
+
+===========================
+
+Description of DockerFile
+    - This uses windowsservercore as the base image. We're going to host a static html page on IIS and all Logs are going to now flow into container logs because we're setting IIS configuration property to do so.
+    - We're also setting up start.ps1 as the entrypoint and copying that script and the static HTML page to C:\inetpub\wwwroot directory.
+
+- With FROM command, we can know all the details regarding the base image such as 
+    - Which registry it belongs to?
+        - For ex: mcr.microsoft.com = microsoft's container registry
+        - If none is specified, it'll go on to look at DockerHub
+    - Container Image Name 
+    - Version
+
+"FROM mcr.microsoft.com/windows/servercore/iis:windowsservercore"
+    Registry = mcr.microsoft.com
+    ImageName = windows/servercore/iis
+    Version: windowsservercore
+    
+With # escape = `, we could use ` as the newline representation. By default Docker uses \ but this could conflict with windows system as well since it uses backslash.
+
+Command Explanation:
+SHELL
+    - By default, with windows containers, we get windows command line as the default CLI
+    - Switches to use PowerShell instead of the Windows command line
+    - Useful when we want to write some complicated Powershell commands
+
+RUN
+    - Executes some powershell to configure IIS to write all logs output to single file.
+
+ENTRYPOINT
+    - Configures a startup script to run when container starts
+
+Upon starting up the container, we do see the Logs flowing through.
+IMP - IIS does buffer log entries for a few mins so if we refresh a few times, we need to execute the log command a few times and we should see all the logs flowing.
+
+For Running same container on Linux, we can use NGINX as the base image - This is really popular in the Linux Workloads
+NGINX - Container friendly
+Hosted on DockerHub
+
+NGINX - Runs as a console app. No additional setting needed to push logs to container console.
+Needs less setup since this is built for container
+
+REMOVING Containers doesn't remove actual images
