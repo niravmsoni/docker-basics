@@ -32,3 +32,13 @@ docker run -d -p 8080:80   `--name <appName>' - Short form
     - 8081 = Port on Host and 80 = Port inside the Docker container
 docker container port <ContainerName>
     - Outputs the port bindings for the specified container
+docker image ls <Name>
+    - Lists all images
+docker login --username <Name>
+    - Logs into the DockerHub
+docker image push <Name>
+docker push <Name> - Short form
+    - Pushes the image to designated registry
+docker pull <ImageName>
+    - Pulls the image from repository based on tags
+    

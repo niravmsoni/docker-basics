@@ -1,0 +1,46 @@
+Registry
+    - Place where Docker images are hosted.
+    - Similar to Github but for Docker images
+    - DockerHub = Public Registry
+    - ACR, ECR = Private Registry
+    - All registries work the same way
+
+Under DockerHub, all images we publish are going to be stored under our UserName
+1 Image can have more than 1 Tags
+
+For public images, we do not need to log into DockerHub.
+For Restricted images or for Pushing images, we need to log into the DockerHub 
+
+Within DockerHub, we wil be able to see metadata associated with the image such as:
+    - OS/Arch
+    - ImageTag
+
+By default, latest is the tag that is applied to all images.
+
+1 repository can have multiple images.
+    - For ex: An image for the same code could be built against 
+        - Windows = Using IIS as the Server
+        - Linux = Using NGINX as the Server
+
+    - Both the docker images could sit in the same repo with difference in tags.
+        - People can pull images based on OS/Arch they want to run by specifying they want to pull image with which tag
+
+Command - "docker build -t "$env:dockerId/tweet-app:v2-linux" ."
+
+$env:dockerId = UserName
+tweet-app = Identify Repository
+v2-linux = Tag
+
+Ideally, its a good practice to include 
+    - Version number
+    - OS identifier
+
+So, that by just pulling the image, people will know what OS is this supposed to run with.
+
+While pulling the image, if we do not specify the tag to pull, it will pull the image with the latest tag
+
+If we try to pull windows image in Linux mode, it'll give us error.
+
+IMP - Linux images are SLICK/SMALLER.
+Generally, if we're building .NET Framework apps, we should use Windows as the OS. They would be Big
+Whereas for newer .NET Core apps, defacto standard is to use Linux as the underlying OS.
