@@ -1,0 +1,15 @@
+The base image is the image you use in the FROM line in your Dockerfile. It was built with a Dockerfile and it comes packaged with software:
+
+nginx is a Linux image with the web server installed
+nanoserver is a Windows image with just the OS installed
+aspnet is a Windows image with IIS and ASP.NET installed
+Microsoft maintain Docker images for the .NET stack on their own registry, mcr.microsoft.com.
+
+.NET Core image
+
+Pulling runtime images
+    - Just has .NET Core installed.
+    - We can use that to run an application that is pre-compiled
+    - Doesn't have SDK so we can't compile the application
+    - Doesn't have ASP.NET Runtime, so we can't run application
+    - This will be useful if we want to run Console applications/Background apps/Batch processing etc. that are pre-compiled
