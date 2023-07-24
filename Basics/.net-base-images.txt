@@ -60,3 +60,23 @@ So, they're smaller as compared to an image derived from windowsservercore.
 IMP - However, windows based images are 100MB bigger than its linux counterparts.
 
 32 bit and .NET Framework apps can't be run on nanoserver. We can run .NET Core and other cross platform apps based on Java, Node etc. They work fine on NanoServer
+
+.NET Framework 4.8 images
+    - All based on Windows Server Core. 
+    - Much bigger than .NET Core variants.
+    - They can only run on Windows OS
+    - Use IIS as the server
+
+docker pull mcr.microsoft.com/dotnet/framework/runtime:4.8
+docker pull mcr.microsoft.com/dotnet/framework/aspnet:4.8
+docker pull mcr.microsoft.com/dotnet/framework/sdk:4.8
+
+When it comes to .NET image, it does not contain any sort of template code that comes when we create a new project from Visual studio
+Because, the expectation is that no one will run any templated code from a container.
+People are supposed to use that as the base image and then build code on top of
+
+Documentation 
+Core - https://mcr.microsoft.com/en-us/product/dotnet/aspnet/about
+Framework - https://mcr.microsoft.com/en-us/product/dotnet/framework/runtime/about
+
+Repo - https://github.com/dotnet/dotnet-docker
