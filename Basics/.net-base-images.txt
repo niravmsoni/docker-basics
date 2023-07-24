@@ -13,3 +13,31 @@ Pulling runtime images
     - Doesn't have SDK so we can't compile the application
     - Doesn't have ASP.NET Runtime, so we can't run application
     - This will be useful if we want to run Console applications/Background apps/Batch processing etc. that are pre-compiled
+
+TaskContainer
+docker run mcr.microsoft.com/dotnet/core/runtime:3.1 dotnet --list-runtimes
+-- This command uses .NET CLI to list all runtimes installed
+
+Pulling SDK image
+    - SDK image has all the MSBuild tools
+    - Using that we can compile our code
+
+If we do not have an image locally and if we execute run command for it, it will download that image first and then execute it.
+
+docker run mcr.microsoft.com/dotnet/core/sdk:3.1 dotnet --list-sdks
+    -Downloads SDK 3.1 image and then using .NET CLI to run commands
+
+Pulling ASP.NET Core image
+    - Builds on runtime image and adds web server runtime.
+    - IMP - Recommendation - We should ideally use smallest image to give us what we need.
+        - For Console app -> It should be based on runtime image
+        - For WebAPI -> It should be based on aspnet image
+
+Comparing all the images
+    docker image ls mcr.microsoft.com/dotnet/core/*:3.1
+
+    mcr.microsoft.com/dotnet/core/runtime = Smallest. Around 190MB - Used for Console applications. Based on Linux Debian.
+    mcr.microsoft.com/dotnet/core/aspnet = Adds Web runtime to above image. So, its just 18 MBs more. Used for web based applications
+    mcr.microsoft.com/dotnet/core/sdk = Biggest. It is full blown SDK. NuGet dependencies, build dependencies and running them.
+
+Windows images
