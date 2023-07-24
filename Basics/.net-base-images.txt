@@ -41,3 +41,22 @@ Comparing all the images
     mcr.microsoft.com/dotnet/core/sdk = Biggest. It is full blown SDK. NuGet dependencies, build dependencies and running them.
 
 Windows images
+
+.NET Core is a cross-platform runtime so you can build apps targeted for Windows or Linux. 
+In Docker terms that means you can build Windows and Linux images for .NET Core apps using the same source code.
+Switch to Windows container mode and you can pull Windows versions of the .NET Core images.
+The Windows images have the same names as the Linux versions:
+
+docker pull mcr.microsoft.com/dotnet/core/runtime:3.1
+docker pull mcr.microsoft.com/dotnet/core/aspnet:3.1
+docker pull mcr.microsoft.com/dotnet/core/sdk:3.1
+
+There is no difference in the names/tags etc. for windows vs linux based images.
+The Docker Daemon would identify its running on which OS and from the image metadata, it will pull the correct version of the image.
+So, if the daemon's running on windows, it'd pull the windows based images and vice versa for Linux
+
+The Windows based images are based on "NanoServer" which is a compressed version of Windows Server.
+So, they're smaller as compared to an image derived from windowsservercore.
+IMP - However, windows based images are 100MB bigger than its linux counterparts.
+
+32 bit and .NET Framework apps can't be run on nanoserver. We can run .NET Core and other cross platform apps based on Java, Node etc. They work fine on NanoServer
