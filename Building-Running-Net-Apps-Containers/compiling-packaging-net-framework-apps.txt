@@ -121,13 +121,41 @@ COPY --from=builder C:\out\_PublishedWebsites\SignUp.Web ${APP_ROOT}
 -------------------------------
 
 Explanation:
-Again a multi-staged build but here, we're copying individual CSProj's and putting them inside src directory.
-At the end, we're running a nuget restore.
+Again a multi-staged build but here, 
+Build stage
+    - Starts with setting C:\src as the working directory.
+    - Copying individual CSProj's and putting them inside src directory.(BENEFIT - In-case if there are no changes in Core project or Entity project, it'll be picked from the Cache. Build will be faster.)
+    - At the end, we're running a nuget restore.
+    - Copying dlls to C:\src
+    - Run MSBuild with release configuration and it'll output to path C:\out
 
-BENEFIT - In-case if there are no changes in Core project or Entity project, it'll be picked from the Cache.
-Build will be faster.
+Release stage
+    - Setting environment variable of AppRoot as C:\web-app
+    - Using powershell to setup new application named as "app", to run under "Default WebSite" and Physical Path of file would come from environment variable "APP_ROOT"
+    - COPY output from builder stage to be put under website's physical path
+
 
 DockerFile = Infrastructure as Code.
 Instead of referring to same code in multiple places, its better to store the path in an environment variable and referring that environment variable wherever we need.
 
+We have 3 ways in which we built the same .NET Framework app.
+1. Using MSI
+2. Using Docker-File with batch
+3. Using Docker-File
 
+Command to compare images
+-------------------------
+docker image ls signup-web:*
+-------------------------
+No significant difference - MSI image little bigger. v2 and v3 produce identical size images.
+
+For testing Cache, updating the web.config without changing any dependencies and building the DockerFile - to see 
+NuGet restore - Comes from Cache.
+Build happens but its faster
+Even all the copying and publish steps come from Cache.
+
+IMP - 
+Understanding optimization
+Optimizing Dockerfiles improves build time. It can also reduce image size and minimize the application attack surface.
+Docker will use the cache as much as it can but when a layer changes then every subsequent instruction gets executed.
+You should structure your Dockerfile so the instructions are in order of change frequency, from least frequent to most frequent.
