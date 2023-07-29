@@ -94,3 +94,6 @@ docker container exec SIGNUP-DB-DEV01 `
 This works. If you have Legacy app(Probably written in .NET 2), we could run that on the latest version of Windows server with latest patch.
 But that is not ideal since docker is also a packaging technology and so is building MSI.
 So, these 2 approaches conflict each other.
+
+Right now, the MSI is created using Wix. So, this contains a lot of details regarding each & every file that it needs to include in the MSI bundle.
+So, its not efficient
