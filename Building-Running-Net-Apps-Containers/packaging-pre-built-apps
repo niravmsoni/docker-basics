@@ -78,3 +78,19 @@ docker network inspect nat
 We could see both web and SQL Server container are present in this same network. Hence, they are able to talk to each other
 
 IMP - Networking is transparent. By default, all containers could talk to each other using container name as the Domain name
+
+Application is working as expected.
+
+When we ran SQL Server, we did not expose any port and so we would not be able to connect to it using SQL Client.
+But we can run SQL Query inside the container.
+
+Executing Powershell Command "Invoke-SqlCmd" on container namely "SIGNUP-DB-DEV01 " using powershell to run SQL query inside container using Powershell 
+---------------------------------------------
+docker container exec SIGNUP-DB-DEV01 `
+  powershell `
+  "Invoke-SqlCmd -Query 'SELECT * FROM Prospects' -Database SignUp"
+---------------------------------------------
+
+This works. If you have Legacy app(Probably written in .NET 2), we could run that on the latest version of Windows server with latest patch.
+But that is not ideal since docker is also a packaging technology and so is building MSI.
+So, these 2 approaches conflict each other.
