@@ -92,3 +92,9 @@ Logging is set to Debug level in the packaged config file
 If we check the logs for .NET Framework app, we will not see any logs pushed out.
 Since IIS writes logs inside file system present within the .NET Framework container
 So, since docker does not know anything related to that file system, it isn't able to read logs.
+
+IMP
+Apps need to be good citizens for Docker
+Docker adds consistency to all your apps but apps need to behave in the expected way to get the full benefit.
+As a minimum you should set up your Docker images so containers can read configuration settings from the environment and write logs to standard out.
+Next we'll see how that works for the .NET Framework and .NET Core components.
