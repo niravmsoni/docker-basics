@@ -60,3 +60,122 @@ docker logs api
 -----------------
 
 We're able to see only Info level logs
+
+.NET Framework
+The web app uses the standard XML configuration model. You can use configuration builders to override app settings from environment variables, but that doesn't work for custom config sections.
+The Web.config file in the web image references the log4net.config file which sets up the logging details.
+Based on configurations present in log4net.config, the logs will be pushed to signup.log file.
+
+Used this command to verify logs are sitting in that file
+--------------
+docker exec signup-web powershell cat /logs/signup.log
+--------------
+
+Updating DockerFile to use start.ps1 file to sit in foreground and push logs to console
+---------------
+# escape=`
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8 AS builder
+
+WORKDIR C:\src
+COPY src\SignUp.Web.sln .
+COPY src\SignUp.Core\SignUp.Core.csproj .\SignUp.Core\
+COPY src\SignUp.Entities\SignUp.Entities.csproj .\SignUp.Entities\
+COPY src\SignUp.Messaging\SignUp.Messaging.csproj .\SignUp.Messaging\
+COPY src\SignUp.Model\SignUp.Model.csproj .\SignUp.Model\
+COPY src\SignUp.Web\SignUp.Web.csproj .\SignUp.Web\
+COPY src\SignUp.Model\packages.config .\SignUp.Model\
+COPY src\SignUp.Web\packages.config .\SignUp.Web\
+RUN nuget restore SignUp.Web.sln
+
+COPY src C:\src
+RUN msbuild SignUp.Web\SignUp.Web.csproj /p:OutputPath=c:\out /p:Configuration=Release
+
+# app image
+FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop';"]
+
+ENV APP_ROOT=C:\web-app
+ENTRYPOINT ["powershell", "C:\\start.ps1"]
+
+WORKDIR ${APP_ROOT}
+RUN New-WebApplication -Name 'app' -Site 'Default Web Site' -PhysicalPath $env:APP_ROOT
+
+COPY --from=builder C:\out\_PublishedWebsites\SignUp.Web ${APP_ROOT} 
+COPY docker\02-06-platform-integration\signup-web\v5\*.config ${APP_ROOT}/
+COPY docker\02-06-platform-integration\signup-web\v5\start.ps1 C:\
+---------------
+
+start.ps1
+----------
+
+Write-Output 'Starting w3svc'
+Start-Service W3SVC
+    
+Write-Output 'Making HTTP GET call'
+Invoke-WebRequest http://localhost/app -UseBasicParsing | Out-Null
+
+Write-Output 'Tailing log file'
+Get-Content -path 'c:\logs\SignUp.log' -Tail 1 -Wait
+----------
+Explanation(start.ps1):
+    We see Entry point is specified as powershell.
+    Within shell script, we're warming up IIS, sending first web request and getting content from path and tailing.
+    This will do Log relay for u.
+
+Explanation(DockerFile):
+    Only difference at the end, we're copying *.config and start.ps1
+    IMP - This is to make sure configuration required for Docker Image should be separate from source code.
+
+    IMP - Web application runs in the background since IIS is a windows service that sits in the background.
+    Foreground application is powershell that is relaying logs for us.
+
+Verified log relay works fine.
+
+Tuning log level(From info to Debug) with config for .NET framework app.
+The .NET app only looks to the filesystem for configuration settings.
+We can't override the logging level with environment variables. Instead we can load a different config file into a container using COPY command to overwrite it.
+The v6 Dockerfile uses a new Web.config which puts the config files into a separate folder.
+
+DockerFile
+--------------
+# escape=`
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8 AS builder
+
+WORKDIR C:\src
+COPY src\SignUp.Web.sln .
+COPY src\SignUp.Core\SignUp.Core.csproj .\SignUp.Core\
+COPY src\SignUp.Entities\SignUp.Entities.csproj .\SignUp.Entities\
+COPY src\SignUp.Messaging\SignUp.Messaging.csproj .\SignUp.Messaging\
+COPY src\SignUp.Model\SignUp.Model.csproj .\SignUp.Model\
+COPY src\SignUp.Web\SignUp.Web.csproj .\SignUp.Web\
+COPY src\SignUp.Model\packages.config .\SignUp.Model\
+COPY src\SignUp.Web\packages.config .\SignUp.Web\
+RUN nuget restore SignUp.Web.sln
+
+COPY src C:\src
+RUN msbuild SignUp.Web\SignUp.Web.csproj /p:OutputPath=c:\out /p:Configuration=Release
+
+# app image
+FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop';"]
+
+ENV APP_ROOT=C:\web-app
+ENTRYPOINT ["powershell", "C:\\start.ps1"]
+
+WORKDIR ${APP_ROOT}
+RUN New-WebApplication -Name 'app' -Site 'Default Web Site' -PhysicalPath $env:APP_ROOT
+
+COPY --from=builder C:\out\_PublishedWebsites\SignUp.Web ${APP_ROOT} 
+COPY docker\02-06-platform-integration\signup-web\v6\Web.config ${APP_ROOT}
+COPY docker\02-06-platform-integration\signup-web\v6\config\*.config ${APP_ROOT}\config\
+COPY docker\02-06-platform-integration\signup-web\v6\start.ps1 C:\
+--------------
+
+Explanation: 
+COPY docker\02-06-platform-integration\signup-web\v6\config\*.config ${APP_ROOT}\config\
+Here, we do see that we're overwriting the configs with configuration sitting in ${APP_ROOT}\config\ directory
+
+And then we can specify the Docker to use config file present on our machine and inject it into container using Volume mount.
+
+Verified - it's picking config file from local machine and replacing it in container.
+Now, we can see only info level logs going through.
