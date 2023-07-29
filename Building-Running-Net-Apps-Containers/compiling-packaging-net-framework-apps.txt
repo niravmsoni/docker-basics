@@ -1,0 +1,133 @@
+Packaging .NET Framework apps directly from sourcecode
+
+Multi-staged Docker file
+    - 1 Docker File which produces 1 docker image
+    - There are multiple stages to it.
+
+DockerFile
+-------------------------------
+# escape=`
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8 AS builder
+
+WORKDIR C:\src
+COPY src .
+RUN .\build-web.bat
+
+# app image
+FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop';"]
+
+WORKDIR C:\web-app
+RUN New-WebApplication -Name 'app' -Site 'Default Web Site' -PhysicalPath C:\web-app
+
+COPY --from=builder C:\out\_PublishedWebsites\SignUp.Web .
+-------------------------------
+
+build-web.bat
+----------------------
+
+nuget restore SignUp.Web.sln
+
+msbuild SignUp.Web\SignUp.Web.csproj /p:OutputPath=c:\out /p:Configuration=Release
+
+----------------------
+
+Explanation - DockerFile:
+There are 2 FROM Statements
+    - FROM mcr.microsoft.com/dotnet/framework/sdk:4.8 AS builder
+        - This is downloading Microsoft's SDK to compile the application
+
+    - FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8
+        - This is using Microsoft's ASP.NET Framework 4.8 image to run application
+
+There are 2 stages:
+    1. Builder stage
+        - Here, we download Microsoft's SDK
+        - We're using build-web.bat batch file to NuGet restore and build application
+        - IMP - "AS builder" = name of stage. We can refer to this stage anytime later in DockerFile.
+        
+    2. Application image
+        - Using ASP.NET Framework 4.8 image
+            - Doesn't have any SDK tools.
+        - Using powershell as shelling tool.
+        - Setting up Work Directory as C:\web-app
+        - Using "RUN New-WebApplication" - We're setting up our web application into IIS
+
+IMP - With Multi-stage DockerFiles, whatever we have in the FINAL FROM is going to build up the final application.
+So, to check this with current demo, if we try to find msbuild version in the container, we will see an error since MSBuild is used as a part of first stage and it won't be present inside the container.
+
+So, its important to copy all the things you need in your final stage of application.
+Nothing will be copied explicitly.
+
+Checking what's in the final image
+The application image has all the content but none of the SDK tools.
+
+Content from earlier stages only makes it to the final image when it's explicitly copied in.
+
+Confirm the DLLs are there but not the build tools:
+
+Command to see what's present in the container
+-----------
+docker container run --rm --entrypoint powershell signup-web:02-02 ls /web-app/bin/SignUp*
+-----------
+
+Command to confirm MSBuild is not present in the final container.
+-----------
+docker container run --rm --entrypoint powershell signup-web:02-02 msbuild -version
+-----------
+
+IMP - This is much better than the MSI
+Everything is done in Docker, you don't need any build tools on the machine (not even .NET) and everyone will use the same versions of the tools.
+
+Right now, the build is actually happening inside a batch file but docker doesn't know what's inside the batch file.
+Hence it won't be able to use the cache
+
+So, if we modify a minor value in the web.config, and retry building the image, 
+The first step we see is it tries to go and use Cache.
+
+PRACTICALLY - If we modify even 1 line of code in source code, entire Cache will be invalidated.
+And we would be changing the SourceCode frequently as compared to the Dependencies our project has.
+So, to make this work, we need to have an improved version
+
+Improved Version of DockerFile
+-------------------------------
+# escape=`
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8 AS builder
+
+WORKDIR C:\src
+COPY src\SignUp.Web.sln .
+COPY src\SignUp.Core\SignUp.Core.csproj .\SignUp.Core\
+COPY src\SignUp.Entities\SignUp.Entities.csproj .\SignUp.Entities\
+COPY src\SignUp.Messaging\SignUp.Messaging.csproj .\SignUp.Messaging\
+COPY src\SignUp.Model\SignUp.Model.csproj .\SignUp.Model\
+COPY src\SignUp.Web\SignUp.Web.csproj .\SignUp.Web\
+COPY src\SignUp.Model\packages.config .\SignUp.Model\
+COPY src\SignUp.Web\packages.config .\SignUp.Web\
+RUN nuget restore SignUp.Web.sln
+
+COPY src C:\src
+RUN msbuild SignUp.Web\SignUp.Web.csproj /p:OutputPath=c:\out /p:Configuration=Release
+
+# app image
+FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop';"]
+
+ENV APP_ROOT=C:\web-app
+
+WORKDIR ${APP_ROOT}
+RUN New-WebApplication -Name 'app' -Site 'Default Web Site' -PhysicalPath $env:APP_ROOT
+
+COPY --from=builder C:\out\_PublishedWebsites\SignUp.Web ${APP_ROOT}
+-------------------------------
+
+Explanation:
+Again a multi-staged build but here, we're copying individual CSProj's and putting them inside src directory.
+At the end, we're running a nuget restore.
+
+BENEFIT - In-case if there are no changes in Core project or Entity project, it'll be picked from the Cache.
+Build will be faster.
+
+DockerFile = Infrastructure as Code.
+Instead of referring to same code in multiple places, its better to store the path in an environment variable and referring that environment variable wherever we need.
+
+
