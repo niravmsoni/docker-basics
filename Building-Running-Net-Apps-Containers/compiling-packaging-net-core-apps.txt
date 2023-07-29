@@ -1,0 +1,94 @@
+Compiling and Packaging .NET Core Apps
+
+Docker makes it easy to run features in separate containers, and takes care of communication between containers.
+Right now the web application loads reference data direct from the database - that's the list of countries and roles in the dropdown boxes.
+We're going to provide that reference data through an API.
+
+The reference data API
+The new component is a simple ASP.NET Core Web API. There's one controller to fetch countries, and another to fetch roles.
+The API uses Dapper for data access. It's a fast lightweight ORM - the API doesn't need the full features of Entity Framework.
+
+DockerFile
+-------------
+FROM mcr.microsoft.com/dotnet/core/sdk:3.1 as builder
+
+WORKDIR /src
+COPY src/SignUp.Entities/SignUp.Entities.csproj ./SignUp.Entities/
+COPY src/SignUp.Api.ReferenceData/SignUp.Api.ReferenceData.csproj ./SignUp.Api.ReferenceData/
+
+WORKDIR /src/SignUp.Api.ReferenceData
+RUN dotnet restore
+
+COPY src /src
+RUN dotnet publish -c Release -o /out SignUp.Api.ReferenceData.csproj
+
+# app image
+FROM mcr.microsoft.com/dotnet/core/aspnet:3.1
+
+EXPOSE 80
+WORKDIR /app
+ENTRYPOINT ["dotnet", "/app/SignUp.Api.ReferenceData.dll"]
+
+COPY --from=builder /out/ .
+COPY ./docker/02-05-packaging-dotnet-apps/reference-data-api/appsettings.json .
+-------------
+Explanation:
+    - Using multi-stage build approach
+    - Builder stage
+        - Using .NET Core 3.1 SDK for build
+        - Setting WorkDir to /src
+        - Copying Entities and ReferenceData CSProjs to respective folders
+        - Switching to API project's folder
+        - Run dotnet restore
+        - Copy rest of sourceCode
+        - Run dotnet publish and out to /out Signup.Api.RefernceData.csproj
+    -App Image
+        - Using Core/ASPnet:3.1 as runtime image
+        - Exposes Port 80
+        - Setup working directory to be "/app"
+        - Specifying Entrypoint as dotnet command.
+        - Side note - With .NET Core - Everything runs as console app. We run .NET CommandLine & pass DLL we want to run
+        - Copying output we produced in previous stage
+        - Copying appSettings.json -> To make sure DB container's name matches configuration
+
+Command to build Reference data provider API
+----------------------------------
+docker image build -t reference-data-api `
+  -f ./docker/02-05-packaging-dotnet-apps/reference-data-api/Dockerfile .
+  ----------------------------------
+
+  The appsettings.json uses the same DB container we setup in previous step in a specific network namely "section-02"
+
+Running new container in network section-02
+-----------------
+docker container ls
+
+docker container run -d -p 8082:80 --name api `
+  --network section-02 `
+  reference-data-api
+  -----------------
+
+Try it out
+
+The API is available on port 8082 on your Docker host. It's a REST API so you can cal it from the browser or with PowerShell.
+Fetch the lists of roles & countries:
+-------------
+Invoke-RestMethod -Method GET http://localhost:8082/api/roles
+
+Invoke-RestMethod -Method GET http://localhost:8082/api/countries
+-------------
+The response is JSON but PowerShell formats it neatly as a table
+
+Check the API logs
+.NET Core is container-friendly. The entrypoint is the dotnet process which runs in the foreground.
+The app is configured to write logs to the console, which where Docker looks for them.
+Command that shows API logs:
+-----------------------
+docker container logs api
+-----------------------
+We're able to see logs here.
+Logging is set to Debug level in the packaged config file
+
+If we check the logs for .NET Framework app, we will not see any logs pushed out.
+Since IIS writes logs inside file system present within the .NET Framework container
+So, since docker does not know anything related to that file system, it isn't able to read logs.
