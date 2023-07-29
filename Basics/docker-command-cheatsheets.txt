@@ -33,6 +33,8 @@ docker container run --detach --publish 8081:80 `--name app hostname-app`
 docker run -d -p 8080:80   `--name <appName>' - Short form
     - With publish switch, we could do Port mapping.
     - 8081 = Port on Host and 80 = Port inside the Docker container
+docker run -d --name <ContainerName> --network <Network name> <ImageName>
+    - Runs container with specified network
 docker container port <ContainerName>
     - Outputs the port bindings for the specified container
 docker image ls <Name>
@@ -52,4 +54,9 @@ docker container inspect <ContainerName>
         - Gateway, etc.
 docker network inspect <Network name>
     - Gives us details regarding all containers present in the given network name
-    
+docker network ls
+    - Lists the networks within docker.
+    - By default, for WINDOWS containers, they could use the nat network which is created by default.
+    - In nat network, containers can talk to each other as well as to the internet.
+docker network create --driver <DRIVERNAME> <NAME>
+    - With windows containers, we'd always use Nat as the driver.
