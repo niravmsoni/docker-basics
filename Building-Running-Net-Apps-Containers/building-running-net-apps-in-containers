@@ -18,3 +18,8 @@ Multi-container apps
 Docker-networking
 
 Docker makes it easy to build and run distributed apps that run across multiple containers
+
+Apart from that, we'll look at good practices.
+    Application to read configurations from Docker,
+    Push logs back from containers so that docker could read those.
+    This would be useful to use Docker to forward all logs to a central location
