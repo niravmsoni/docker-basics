@@ -1,0 +1,62 @@
+Integrating .NET Apps with the Docker Platform
+Docker can run any apps in containers. If they don't fit the conventions they still work but you lose the consistency in how you manage apps.
+IMP - Making apps behave how Docker expects can all be done in the Dockerfile setup, you don't need to change code or redesign apps.
+
+.NET Core Code
+------------------
+        public static IHostBuilder CreateHostBuilder(string[] args) =>
+            Host.CreateDefaultBuilder(args)
+                .ConfigureAppConfiguration((builderContext, config) =>
+                {
+                    config.AddStandardSources();
+                })
+                .ConfigureWebHostDefaults(webBuilder =>
+                {
+                    webBuilder.UseStartup<Startup>();
+                });
+
+                public static IConfigurationBuilder AddStandardSources(this IConfigurationBuilder builder)
+        {
+            return builder.AddJsonFile("appsettings.json")
+                          .AddJsonFile("configs/config.json", optional: true)
+                          .AddJsonFile("secrets/secret.json", optional: true)
+                          .AddEnvironmentVariables();
+        }
+------------------
+Explanation: 
+When we build IConfigurationBuilder, we are setting a hierarchy.
+    Base - appsettings.json
+    2 optional files: configs/config.json
+                      secrets/secret.json
+    At the end, we're adding .AddEnvironmentVariables()
+
+    Meaning 
+        - If a configuration already exists in appsettings.json
+        and the same setting is being set from an environment variable as well, then 
+        setting taken from Environment variable takes Precedence.
+
+    - That's why we specify appSettings.json as the first thing and then environment specific appSettings are specified later.
+
+To test this, the default Logging level is set to information.
+While running container, if we specify Logging Level as Information, only info level logs will be visible.
+
+Commands
+---------------
+docker ps
+docker logs api
+docker rm -f api
+docker run -d -p 8082:80 --name api `
+  --network section-02 `
+  -e Logging:LogLevel:Default=Information `
+  reference-data-api
+---------------
+Explanation:
+ -e Logging:LogLevel:Default=Information ` -> We're setting Default LogLevel as information.
+
+Command to invoke endpoint and test logs
+-----------------
+Invoke-RestMethod -Method GET http://localhost:8082/api/roles
+docker logs api
+-----------------
+
+We're able to see only Info level logs
