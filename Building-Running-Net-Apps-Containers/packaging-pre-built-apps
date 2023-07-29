@@ -21,3 +21,60 @@ Within argument list,
 
 Since we have MSI availabe directly, we could double click & install it but it expects our machine to have IIS and .NET present
 But because we are using a DockerImage that has all these IIS/.NET pre-built, we do not need to worry about it.
+
+Running command to build image
+-------------------------
+cd $env:docker4dotnet
+
+cd docker/02-02-packaging-pre-built-apps/signup-web/v1
+
+docker image build -t signup-web:02-01 .
+
+After successful building of image, if we try to run it, it will start but will give an error since it requires SQL Server also to be present
+
+Running command to start container in detached mode
+--------------------------
+docker run -d -p 8080:80 --name web signup-web:02-01
+--------------------------
+It will have some delay because of cold start. Plus app is using EF Code first, so it waits for SQL server connectivity
+We see an error related to a network instance could not setup. Connectivity with SQL Server failed.
+
+--
+For debugging problem we need to get inside container to see what the problem is.
+
+Running command to start interactive session using powershell in a container namely "web"
+-----------------------------
+>docker exec -it web powershell
+>ls
+>cd docker4.net\SignUp.Web
+>cat web.config
+>cat .\connectionStrings.config
+exit
+-----------------------------
+SQL Server connection string present but not able to find a running instance of SQL Server.
+
+Running a SQL Server with details that matches the information present in connection string 
+Running command to start SQL Server and pinging it from web container to see it its able to connect to it?
+---------------------------------------------
+docker run -d --name SIGNUP-DB-DEV01 `
+  --env sa_password=DockerCon!!! `
+  docker4dotnet/sql-server:2017
+
+docker exec -it web powershell ping SIGNUP-DB-DEV01
+---------------------------------------------
+We would see that the web container is able to talk to the SQL Server because the web container does a DNS Lookup based on the SQL Server name and 
+sql server is also running on the same using the domain name. So, it is able to ping it since they are on the same network stack
+
+Command to inspect networking related to Docker
+---------------------------------------------
+docker container inspect web
+---------------------------------------------
+By default windows container connect to "nat" network
+
+Command to inspect all containers present in a given network
+---------------------------------------------
+docker network inspect nat
+---------------------------------------------
+We could see both web and SQL Server container are present in this same network. Hence, they are able to talk to each other
+
+IMP - Networking is transparent. By default, all containers could talk to each other using container name as the Domain name

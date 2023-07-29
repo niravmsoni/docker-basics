@@ -42,4 +42,12 @@ docker push <Name> - Short form
     - Pushes the image to designated registry
 docker pull <ImageName>
     - Pulls the image from repository based on tags
+
+--Networking
+docker container inspect <ContainerName>
+    - Gives us all the information related to the network of the networking of the container such as
+        - IPAddress, 
+        - Gateway, etc.
+docker network inspect <Network name>
+    - Gives us details regarding all containers present in the given network name
     
