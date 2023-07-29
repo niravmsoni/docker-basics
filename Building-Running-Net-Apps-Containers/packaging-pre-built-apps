@@ -1,1 +1,23 @@
-Motto - We're going to take an old ASP.NET Framework app that talks with SQL Server and package it into a docker file.
+Motto - We are going to take an old ASP.NET Framework app that talks with SQL Server and package it into a docker file.
+
+--DockerFile
+
+FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+COPY SignUp-1.0.msi /
+RUN Start-Process msiexec.exe -ArgumentList '/i', 'C:\SignUp-1.0.msi', '/quiet', '/norestart' -NoNewWindow -Wait
+
+Explanation:
+This starts from .NET Framework 4.8
+Using SHELL, we are  instructing Docker to use Powershell as the shell language of choice.
+
+The name of the MSI is "SignUp-1.0.msi"
+We are copying the MSI from root folder(Where DockerFile resides)
+msiexec.exe - This is the command that runs and installs the MSI.
+Within argument list,
+'/i' = install, Location of MSI(Which was copied in the previous step), Quiet & NoRestart - Do not popup any new windows and wait till installation is complete
+-Wait - Important for powershell to wait till the installation has completed
+
+Since we have MSI availabe directly, we could double click & install it but it expects our machine to have IIS and .NET present
+But because we are using a DockerImage that has all these IIS/.NET pre-built, we do not need to worry about it.

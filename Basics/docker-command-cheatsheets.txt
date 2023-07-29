@@ -26,6 +26,7 @@ docker build -t <TagName> <Location> - Short form
     - --tag - With tag switch, we could tag it with whatever name we want
     - Location could be where the content lives. If you're within the root folder of the directory where your dockerFile is, we could simply specify a '.'
     - . means inside this directory
+    - All file paths in the DockerFile are relative to the directory in which its' placed.
 docker container run --detach --publish 8081:80 `--name app hostname-app`
 docker run -d -p 8080:80   `--name <appName>' - Short form
     - With publish switch, we could do Port mapping.
