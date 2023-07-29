@@ -1,0 +1,20 @@
+There are multiple ways to create docker image.
+
+Multiple ways to deploy application into container:
+1. Dealing with older/legacy .NET projects whose artifacts are already getting produced using an MSI/Zip:
+    a. Take old .NET MSI/ZIP file
+    b. Use Powershell to extract Zip & install .exe
+    c. Simple but Limited. Not ideal ways
+2. Start from Source Code
+    a. Use Multi-stage build(Could use Both for Windows/Linux)
+        a. Compile source code using SDK image
+        b. Copy binaries and put it on top of runtime image
+        c. Really nice approach - Makes build Portable. (We do not need .NET SDK or .NET Runtime installed on the machine. We just need sourcecode, DockerFile & Docker and rest everything happens inside containers )
+
+Going forward, Architecture =  .NET Framework application talking with SQL Server.
+We'll deploy it to containers
+
+Multi-container apps
+Docker-networking
+
+Docker makes it easy to build and run distributed apps that run across multiple containers
