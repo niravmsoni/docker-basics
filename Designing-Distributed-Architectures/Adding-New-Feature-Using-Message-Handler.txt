@@ -255,3 +255,6 @@ Benefits of using Kibana:
 Here, because we're using async communication, we added a new listener to the same event. So, end user experience is not hampered(Since this activity happens in the background).
 With the handler that handles writing information to elastic-search, we're also fetching additional lookup data and entering them when the information saves as a document in the Kibana.
 This is how new features are added without modifying existing application
+
+Right now, all apps are running using Windows container. They'd require windows OS as the runtime. If we're deploying on cloud, windows servers are more expensive as compared to Linux.
+So, we should move whatever components are possible to linux where we can.
