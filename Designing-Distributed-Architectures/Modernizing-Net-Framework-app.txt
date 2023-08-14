@@ -1,0 +1,90 @@
+Intro:
+Monoliths can run in containers just fine. But they aren't modern apps - they're just old apps running in containers.
+You can rebuild a monolith into microservices, but that's a long-term project.
+We'll do it incrementally instead, by breaking features out of the monolith and running them in separate containers - starting with the reference data API and the app's homepage.
+
+.NET Framework application reads reference data directly from the DB.
+.NET Core application is an API built and running separately to fetch data from DB.
+
+Here, within the .NET Framework application, we will be injecting dependencies using .NET Standard libraries.
+Here, we're injecting 2 loaders: DatabaseReferenceDataLoader and ApiReferenceDataLoader.
+
+We've also added a new appsettings.json where we're storing all the configuration needed for .NET Framework app to talk to .NET Core application.
+
+Under Dependencies section, IReferenceDataLoader specifies which dependency to use our of these 2(DatabaseReferenceDataLoader and ApiReferenceDataLoader) - Meaning we can now control it from an environment variable.
+We also have ReferenceDataAPI URL which is going to be the URL on which the reference data api is going to run.
+
+docker-compose.yml
+=================
+version: '3.8'
+
+services:  
+  signup-db:
+    image: docker4dotnet/sql-server:2017
+    environment:
+      - sa_password=docker4.net!
+    networks:
+      - signup-net
+
+  signup-web:
+    image: signup-web:02-06
+    ports:
+      - 8081:80
+    environment:
+      - Dependencies:IReferenceDataLoader=SignUp.Web.ReferenceData.ApiReferenceDataLoader
+      - ReferenceDataApi:Url=http://reference-data-api/api
+    depends_on:
+      - signup-db
+      - reference-data-api
+    networks:
+      - signup-net
+
+  reference-data-api:
+    image: reference-data-api
+    ports:
+      - 8082:80
+    environment: 
+      - Logging:LogLevel:Default=Information
+    depends_on:
+      - signup-db
+    networks:
+      - signup-net
+
+networks:
+  signup-net:
+=================
+Explanation: 
+    Here as you can see, we're changing the environment variable to use ApiReferenceDataLoader.(So that reference data loads using .NET Core Microservice)
+    Also, ReferenceDataApi:Url=http://reference-data-api/api where reference-data-api = service name in docker-compose & docker will internally resolve the URL's IP for us.
+
+
+For changing the UI, the current one's sitting inside .NET Framework application. It might have a lot of dependencies. Since its monolith, updating existing UI would mean rebuilding the entire monolith.
+
+Added a new homepage - Static HTML(Vue.js)
+
+For hosting that image, we would use plain IIS image and copy the file to C:\\inetpub\\wwwroot folder.
+
+DockerFile
+===========
+# escape=`
+FROM mcr.microsoft.com/windows/servercore/iis:windowsservercore
+
+COPY .\docker\03-03-frontend-modernize\homepage\index.html C:\inetpub\wwwroot
+===========
+
+Building docker image
+===================
+docker image build `
+  -t homepage `
+  -f ./docker/03-03-frontend-modernize/homepage/Dockerfile .
+  ===================
+
+Running new homepage
+===============
+docker container run -d -p 8040:80 --name home homepage
+===============
+
+App works. But when we try to call it to .NET Core application, it will fail since it's not configured to run as a part of this container.
+That's where we'll use a Reverse Proxy to make sure we can have different containerized applications running together using A-Record or Prefix or Proxy.
+
+
