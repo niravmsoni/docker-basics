@@ -1,0 +1,23 @@
+Distributed Applications:
+    In an ideal world of microservices, we have multiple smaller applications running in separate containers talking to each other.
+    This means we could scale those components as well as deploy them independently
+    
+    In previous step, we manually ran container using docker run command.
+    Here, we will use Docker Compose to manage app.
+    Docker Compose = Separate part of docker ecosystem that lets us model app using YAML.
+    We use docker compose command line to then manage our applications
+
+    Docker Compose
+        Starts containers
+        Networks them
+        Joins everything together
+
+    Reverse Proxy
+        Networking component that listens to incoming traffic
+        Single entry point of application
+        When external request comes in, it resolves where its supposed to redirect the traffic
+
+    Here, we will also rely on changing the Monolith to Microservice. Running home page UI on a separate container. Using Reverse proxy, we will expose 1 entry point and then internally, we will manage the routing
+    Also, earlier, we were directly connecting with .NET Core API using Sync call. Now, we will be running Messaging on a separate container and publish events. Using so, we will decouple the application.
+    Using Event Driven architecture, really means, we can add new features without disturbing the existing implementation.
+    Zero downtime deployment
