@@ -1,0 +1,160 @@
+Intro:
+Right now the app saves data by synchronously connecting to SQL Server. That's a bottleneck which will stop the app performing if there's a peak in traffic.
+We'll fix that by using a message queue instead - running in a Docker container.
+When you sign up the web app will publish an event message on the queue, which a message handler picks up and actions. The message handler is a .NET Framework console app running in another container.
+
+For Sync to Async communication pattern:
+    1. Run a Message Queue - Communication buffer
+    2. Send messages to Queue - Sender
+    3. Poll messages from Queue - Receiver
+
+For polling and saving message to DB, created a new message handler. Created a console application and copied the code that saves data to DB
+
+DockerFile
+===========
+# escape=`
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8 AS builder
+
+WORKDIR C:\src
+COPY src\SignUp.sln .
+COPY src\SignUp.Core\SignUp.Core.csproj .\SignUp.Core\
+COPY src\SignUp.Entities\SignUp.Entities.csproj .\SignUp.Entities\
+COPY src\SignUp.Messaging\SignUp.Messaging.csproj .\SignUp.Messaging\
+COPY src\SignUp.Model\SignUp.Model.csproj .\SignUp.Model\
+COPY src\SignUp.Model\packages.config .\SignUp.Model\
+COPY src\SignUp.MessageHandlers.SaveProspect\SignUp.MessageHandlers.SaveProspect.csproj .\SignUp.MessageHandlers.SaveProspect\
+COPY src\SignUp.MessageHandlers.SaveProspect\packages.config .\SignUp.MessageHandlers.SaveProspect\
+RUN nuget restore .\SignUp.sln
+
+COPY src C:\src
+RUN msbuild SignUp.MessageHandlers.SaveProspect\SignUp.MessageHandlers.SaveProspect.csproj /p:OutputPath=c:\out\save-prospect\SaveProspectHandler
+
+# app image
+FROM mcr.microsoft.com/dotnet/framework/runtime:4.8
+
+ENV APP_ROOT=C:\save-prospect-handler
+
+WORKDIR ${APP_ROOT}
+CMD .\SignUp.MessageHandlers.SaveProspect.exe
+
+COPY --from=builder C:\out\save-prospect\SaveProspectHandler .
+COPY docker\03-05-backend-async-messaging\save-handler\App.config ${APP_ROOT}\SignUp.MessageHandlers.SaveProspect.exe.config
+COPY docker\03-05-backend-async-messaging\save-handler\config\*.config ${APP_ROOT}\config\
+===========
+
+Building docker image now.
+=========
+docker image build `
+  -t save-handler `
+  -f ./docker/03-05-backend-async-messaging/save-handler/Dockerfile .
+=========
+For modifying which workflow to use for saving(Saving Directly to DB vs using Async communication, we will be overriding the Dependency in the appsettings.json i.e. IProspectSaveHandler to now use AsynchronousProspectSaveHandler)
+
+dockerCompose file
+=================
+version: '3.8'
+
+services:  
+  signup-db:
+    image: docker4dotnet/sql-server:2017
+    environment:
+      - sa_password=docker4.net!
+    networks:
+      - signup-net
+
+  signup-web:
+    image: signup-web:02-06
+    environment:
+      - Dependencies:IReferenceDataLoader=SignUp.Web.ReferenceData.ApiReferenceDataLoader
+      - ReferenceDataApi:Url=http://reference-data-api/api
+      - Dependencies:IProspectSaveHandler=SignUp.Web.ProspectSave.AsynchronousProspectSaveHandler
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=PathPrefix(`/app/`)"
+    depends_on:
+      - signup-db
+      - reference-data-api
+      - message-queue
+    networks:
+      - signup-net
+
+  reference-data-api:
+    image: reference-data-api
+    environment: 
+      - Logging:LogLevel:Default=Information
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api/`)"
+    depends_on:
+      - signup-db
+    networks:
+      - signup-net
+
+  homepage:
+    image: homepage
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.homepage.rule=PathPrefix(`/`)"
+    networks:
+      - signup-net
+
+  proxy:
+    image: traefik:v2.3-windowsservercore-1809
+    command:
+      - "--providers.docker"
+      - "--providers.docker.endpoint=npipe:////./pipe/docker_engine"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=signup-net"
+      - "--entrypoints.web.address=:80"
+      - "--api.insecure=true"
+    ports:
+      - "8080:80"
+      - "8088:8080"
+    volumes:
+      - type: npipe
+        source: \\.\pipe\docker_engine
+        target: \\.\pipe\docker_engine      
+    networks:
+      - signup-net
+
+  message-queue:
+    image: nats:2.1
+    networks:
+      - signup-net
+
+  signup-save-handler:
+    image: save-handler
+    depends_on:
+      - signup-db
+      - message-queue
+    networks:
+      - signup-net
+
+networks:
+  signup-net:
+=================
+Explanation:
+  - Dependencies:IProspectSaveHandler=SignUp.Web.ProspectSave.AsynchronousProspectSaveHandler
+
+Using this line switched the save workflow to use message queue. This will publish message to a message queue.
+New Container namely "message-queue" and we're using NATS as the message queue.
+More info about NATS: https://nats.io/
+The message queue is NATS, a high-performance in-memory queue which is ideal for communication between containers. The NATS team maintain official container images on Docker Hub.
+
+New Container namely "signup-save-handler" -> Console application that's now responsible to save information to DB.
+
+Added message-queue as dependency for "signup-web"[Sender] and "signup-save-handler"[Receiver]
+
+Running containers now:
+docker-compose -f ./app/03/v5.yml up -d
+
+Verified. Entire save flow is working fine as-is.
+
+Benefit of event driven architecture:
+====================================
+Now we've got an event driven architecture! Well, not completely - but for one key path through our application, we have event publishing.
+Right now, there's only 1 message handler to save information to DB.
+Going forward, we can have multiple message handlers to handle the same event differently.
+
+You can easily extend the app now by adding new message handlers which subscribe to the same event.
+Next we'll see how a new message handler can add self-service analytics to the application.
