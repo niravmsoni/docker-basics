@@ -85,6 +85,7 @@ docker container run -d -p 8040:80 --name home homepage
 ===============
 
 App works. But when we try to call it to .NET Core application, it will fail since it's not configured to run as a part of this container.
+For running this application as whole, we'll need all the moving parts to be tied together using a single domain name
 That's where we'll use a Reverse Proxy to make sure we can have different containerized applications running together using A-Record or Prefix or Proxy.
 
 
