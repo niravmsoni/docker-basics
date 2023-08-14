@@ -46,6 +46,7 @@ Networks: the networks section defines the Docker networks
 This is a declarative approach rather than the imperative way of running docker commands. The Compose file is often called the application manifest.
 
 Each container we want to run would go in as individual services.
+
 Now, each service can have 
     <container_name> - This is for ensuring other containers can reference to this container
     image - Which it's supposed to use
@@ -53,6 +54,25 @@ Now, each service can have
     networks - If we want to explicitly run container in a network.
     depends-on - Here we can reference other container. When we specify this, it means that the specified container will not start till the container specified in depends-on is up and running
     ports - Port Mapping
+    volume - Volume mounting
 
 
+If we look at this docker compose file, 
+It has "signup-db" which uses image "docker4dotnet/sql-server:2017" has password specified as environment variable and uses a network. Also, it would be deployed in network namely "signup-net"
+It has "signup-Web" which is .NET Framework app which maps port 8081 to 80 and for this container to run, since it depends on "signup-db" it will wait for that container to be up before starting this container. Also, it would be deployed in network namely "signup-net"
+It has "reference-data-api" whici is a .NET Core API mapping port 8082 to 80. It also dependes on "signup-db", exposes port 8082 and maps to port 80. 
 
+For running all these containers specified in docker-compose.yml file, we just need 1 command i.e. 
+
+"docker-compose up -d"
+where -d means run all containers in detached mode.
+
+So, then docker will take the responsiblity of making sure all the applications are running.
+We can view the logs using docker logs. Now, the default logging is Debug. We can overwrite the logging using environment vars.(The way we did in section#2)
+
+If we do not make any changes in any of the container and re-run the docker-compose up, docker compose will internally compare it with the container that's already up and it will not create a new copy of the container.
+
+If we want to run docker-compose against a dedicated file(Outside current directory), I could use
+"docker-compose -f v2.yml up -d"
+
+For already running container, we cannot change environment variable or environment. So, if there are updates to a container's environment, then docker will stop existing container and recreate new one with newer configurations
