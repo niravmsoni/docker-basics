@@ -1,0 +1,257 @@
+Intro:
+The app uses SQL Server for storage, which isn't very friendly for business users to get reports. Next we'll add self-service analytics, using enterprise-grade open-source software.
+We'll be running Elasticsearch for storage and Kibana to provide an analytics front-end.
+
+Makes from ElasticSearch itself created Kibana as a front-end for analytics data.
+
+Adding a new handler to listen to the same save prospect event.
+To get data into Elasticsearch when a user signs up, we just need another message handler, which will listen for the same messages published by the web app.
+The new handler is a .NET Core console application. The code is in QueueWorker.cs - it subscribes to the same event messages, then enriches the data and stores it in Elasticsearch.
+
+The new message handler only shares the messaging library with the WebForms app, so there are no .NET Framework dependencies and it can run in .NET Core.
+The Dockerfile follows the familiar pattern - the app image is based on the .NET Core runtime image.
+
+DockerFile
+===============
+FROM mcr.microsoft.com/dotnet/core/sdk:3.1 as builder
+
+WORKDIR /src
+COPY src/SignUp.Core/SignUp.Core.csproj ./SignUp.Core/
+COPY src/SignUp.Entities/SignUp.Entities.csproj ./SignUp.Entities/
+COPY src/SignUp.Messaging/SignUp.Messaging.csproj ./SignUp.Messaging/
+COPY src/SignUp.MessageHandlers.IndexProspect/SignUp.MessageHandlers.IndexProspect.csproj ./SignUp.MessageHandlers.IndexProspect/
+
+WORKDIR /src/SignUp.MessageHandlers.IndexProspect
+RUN dotnet restore
+
+COPY src /src
+RUN dotnet publish -c Release -o /out SignUp.MessageHandlers.IndexProspect.csproj
+
+# app image
+FROM mcr.microsoft.com/dotnet/core/runtime:3.1
+ARG APP_USER=ContainerAdministrator
+
+WORKDIR /index-prospect-handler
+ENTRYPOINT ["dotnet", "SignUp.MessageHandlers.IndexProspect.dll"]
+
+USER $APP_USER
+COPY --from=builder /out/ .
+===============
+Build the image in the usual way:
+
+docker image build --tag index-handler `
+  --file ./docker/03-06-backend-analytics/index-handler/Dockerfile .
+
+For running Elastic Search in Docker,
+The Elasticsearch team maintain their own Docker image for Linux containers, but not yet for Windows.
+
+It's easy to package your own image to run Elasticsearch - this Dockerfile downloads Elasticsearch and installs it on top of the official OpenJDK image.
+
+DockerFile - ElasticSearch
+=========
+FROM mcr.microsoft.com/windows/nanoserver:1809 AS download
+ARG ELASTIC_VERSION="6.8.12"
+
+RUN curl -o elasticsearch.zip https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-oss-%ELASTIC_VERSION%.zip
+RUN tar -xzf elasticsearch.zip
+
+# elasticsearch
+FROM openjdk:11-jdk-nanoserver-1809
+ARG ELASTIC_VERSION="6.8.12"
+
+EXPOSE 9200 9300
+ENV ES_HOME="/usr/share/elasticsearch" \
+    ES_JAVA_OPTS="-Xms1024m -Xmx1024m"
+
+WORKDIR /usr/share/elasticsearch
+COPY --from=download /elasticsearch-${ELASTIC_VERSION}/ .
+COPY docker/03-06-backend-analytics/elasticsearch/elasticsearch.yml \
+     docker/03-06-backend-analytics/elasticsearch/log4j2.properties \
+     config/
+
+USER ContainerAdministrator
+CMD ["bin\\elasticsearch.bat"]
+=========
+Explanation:
+Since this is not available on windows out of the box, we will be packaging this to run on NanoServer(Windows based).
+Using curl to download .zip & then we will be using tar to unzip it.
+This one uses multi-stage docker file. Stage#1 = Download and Stage#2 = Packaging application based on our needs.
+
+Curl and tar are traditional linux commands but are a part of nanoserver.
+
+Elastic search based on Java.
+
+Build the database image:
+docker image build --tag elasticsearch `
+  --file ./docker/03-06-backend-analytics/elasticsearch/Dockerfile .
+
+For Kibana,
+Based on NodeJs. Comes with 32 bit NodeJs installed. But we need 64 bit(Smaller footprint app). So, in docker-file, we will remove 32 bit nodeJs and download 64 bit nodeJS
+DockerFile - Kibana
+=================
+# escape=`
+FROM mcr.microsoft.com/windows/nanoserver:1809 AS download
+ARG KIBANA_VERSION="6.8.12"
+
+RUN curl -o kibana.zip https://artifacts.elastic.co/downloads/kibana/kibana-oss-%KIBANA_VERSION%-windows-x86_64.zip
+RUN md C:\kibana-%KIBANA_VERSION%-windows-x86_64 && `
+    tar -xzf kibana.zip
+
+WORKDIR /kibana-${KIBANA_VERSION}-windows-x86_64
+RUN del /Q node\node.exe
+
+# kibana - 6.8.12 requires node@ v10.21.0
+FROM mcr.microsoft.com/windows/servercore:ltsc2019 as node
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+ARG NODE_VERSION="10.21.0"
+
+RUN Write-Host "Downloading Node version: $env:NODE_VERSION"; `
+    Invoke-WebRequest -OutFile node.zip "https://nodejs.org/dist/v$($env:NODE_VERSION)/node-v$($env:NODE_VERSION)-win-x64.zip"; `
+    Expand-Archive node.zip -DestinationPath C:\ ; `
+    Rename-Item -Path "C:\node-v$($env:NODE_VERSION)-win-x64" -NewName C:\nodejs
+
+# kibana
+FROM mcr.microsoft.com/windows/nanoserver:1809
+ARG KIBANA_VERSION="6.8.12"
+
+COPY --from=node /nodejs /nodejs
+
+USER ContainerAdministrator
+RUN setx /M PATH "%PATH%;C:\nodejs"
+
+EXPOSE 5601
+ENV KIBANA_HOME="/usr/share/kibana" 
+
+WORKDIR /usr/share/kibana
+COPY --from=download /kibana-${KIBANA_VERSION}-windows-x86_64/ .
+COPY docker/03-06-backend-analytics/kibana/kibana.bat bin/
+COPY docker/03-06-backend-analytics/kibana/kibana.yml config/
+
+CMD ["bin\\kibana.bat"]
+=================
+Stage#1 - Download Kibana and get rid of 32 bit NodeJs
+Stage#2 - Download NodeJs 64 bit
+Stage#3 - Configuring Kibana
+
+Integrating ElasticSearch and Kibana in Docker-compose.
+
+Docker-compose
+==============
+version: '3.8'
+
+services:  
+  signup-db:
+    image: docker4dotnet/sql-server:2017
+    environment:
+      - sa_password=docker4.net!
+    networks:
+      - signup-net
+
+  signup-web:
+    image: signup-web:02-06
+    environment:
+      - Dependencies:IReferenceDataLoader=SignUp.Web.ReferenceData.ApiReferenceDataLoader
+      - ReferenceDataApi:Url=http://reference-data-api/api
+      - Dependencies:IProspectSaveHandler=SignUp.Web.ProspectSave.AsynchronousProspectSaveHandler
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=PathPrefix(`/app/`)"
+    depends_on:
+      - signup-db
+      - reference-data-api
+      - message-queue
+    networks:
+      - signup-net
+
+  reference-data-api:
+    image: reference-data-api
+    environment: 
+      - Logging:LogLevel:Default=Information
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api/`)"
+    depends_on:
+      - signup-db
+    networks:
+      - signup-net
+
+  homepage:
+    image: homepage
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.homepage.rule=PathPrefix(`/`)"
+    networks:
+      - signup-net
+
+  proxy:
+    image: traefik:v2.3-windowsservercore-1809
+    command:
+      - "--providers.docker"
+      - "--providers.docker.endpoint=npipe:////./pipe/docker_engine"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=signup-net"
+      - "--entrypoints.web.address=:80"
+      - "--api.insecure=true"
+    ports:
+      - "8080:80"
+      - "8088:8080"
+    volumes:
+      - type: npipe
+        source: \\.\pipe\docker_engine
+        target: \\.\pipe\docker_engine      
+    networks:
+      - signup-net
+
+  message-queue:
+    image: nats:2.1
+    networks:
+      - signup-net
+
+  signup-save-handler:
+    image: save-handler
+    depends_on:
+      - signup-db
+      - message-queue
+    networks:
+      - signup-net
+
+  signup-index-handler:
+    image: index-handler
+    depends_on:
+      - elasticsearch
+      - message-queue
+    networks:
+      - signup-net
+
+  elasticsearch:
+    image: elasticsearch
+    networks:
+      - signup-net
+
+  kibana:
+    image: kibana
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - signup-net
+
+networks:
+  signup-net:
+=============
+3 new containers added above. All existing containers are not modified. Meaning this is a 0 down-time deployment.
+  signup-index-handler
+  elasticsearch
+  kibana
+
+Running new docker compose. All original components as is. and remain untouched. New containers are added to the existing network.
+
+Upon checking logs, we see existing flow does remain as-is. The logs from new container signup-index-handler also show same event handled within that as well.
+
+Benefits of using Kibana:
+========================
+Here, because we're using async communication, we added a new listener to the same event. So, end user experience is not hampered(Since this activity happens in the background).
+With the handler that handles writing information to elastic-search, we're also fetching additional lookup data and entering them when the information saves as a document in the Kibana.
+This is how new features are added without modifying existing application
