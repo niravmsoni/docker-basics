@@ -1,0 +1,58 @@
+Intro:
+Docker Compose is a separate part of the Docker ecosystem. You use the Compose specification to model your applications in a YAML file, and the docker-compose command line to run apps from the YAML spec.
+It's how you define a multi-container app so you don't need to manually create containers and networks.
+
+Docker Compose = Seperate command line tool. We get it by default when we install docker
+
+For using docker compose, we need to write a docker compose YAML file or Specification file
+
+docker-compose.YAML Sample
+=================
+version: '3.8'
+
+services:  
+  signup-db:
+    image: docker4dotnet/sql-server:2017
+    environment:
+      - sa_password=docker4.net!
+    networks:
+      - signup-net
+
+  signup-web:
+    image: signup-web:02-06
+    ports:
+      - 8081:80
+    depends_on:
+      - signup-db
+    networks:
+      - signup-net
+
+  reference-data-api:
+    image: reference-data-api
+    ports:
+      - 8082:80
+    depends_on:
+      - signup-db
+    networks:
+      - signup-net
+
+networks:
+  signup-net:
+=================
+Explanation:
+Services: the services section defines the parts of the app which run in containers
+Networks: the networks section defines the Docker networks
+
+This is a declarative approach rather than the imperative way of running docker commands. The Compose file is often called the application manifest.
+
+Each container we want to run would go in as individual services.
+Now, each service can have 
+    <container_name> - This is for ensuring other containers can reference to this container
+    image - Which it's supposed to use
+    environment - If Any?
+    networks - If we want to explicitly run container in a network.
+    depends-on - Here we can reference other container. When we specify this, it means that the specified container will not start till the container specified in depends-on is up and running
+    ports - Port Mapping
+
+
+
