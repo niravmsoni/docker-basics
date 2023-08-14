@@ -1,0 +1,142 @@
+Intro:
+A reverse proxy is the central entrypoint to your apps. It receives all incoming requests, fetches the content from another container and sends it back to the consumer.
+It's how you run multiple apps in containers and make them all available from the same port.
+
+Earlier, reverse proxies(Nginx or HAProxy) were static configuration files.
+They list all routes they support(DNS, Targets etc.)
+
+With advent of Docker, it became popular to run your reverse proxy itself in a container along with rest of application stack.
+
+Traefik(https://traefik.io/) - Doesn't need static configuration file. It talks to docker API and builds its own routing table based on info it gets from Docker.
+Traefik team uploaded Docker image on docker hub(https://hub.docker.com/_/traefik)
+
+Official DockerFile for Traefik - https://github.com/containous/traefik-library-image/blob/master/windows/1809/Dockerfile
+
+DockerFile
+============
+FROM mcr.microsoft.com/windows/servercore:1809
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+RUN Invoke-WebRequest \
+        -Uri "https://github.com/containous/traefik/releases/download/v2.3.0-rc5/traefik_v2.3.0-rc5_windows_amd64.zip" \
+        -OutFile "/traefik.zip"; \
+    Expand-Archive -Path "/traefik.zip" -DestinationPath "/" -Force; \
+    Remove-Item "/traefik.zip" -Force
+
+EXPOSE 80
+ENTRYPOINT [ "/traefik" ]
+
+# Metadata
+LABEL org.opencontainers.image.vendor="Containous" \
+    org.opencontainers.image.url="https://traefik.io" \
+    org.opencontainers.image.title="Traefik" \
+    org.opencontainers.image.description="A modern reverse-proxy" \
+    org.opencontainers.image.version="v2.3.0-rc5" \
+    org.opencontainers.image.documentation="https://docs.traefik.io"
+============
+Explanation:
+This uses server core as the base image. Shell as powershell. Downloading .zip file using Invoke-WebRequest, unzipping .zip file and removing .zip file since its' not required.
+Exposing port 80 and specifying /traefik as the entry point i.e. Traefik.exe
+
+New thing: They've given label here. We can label container, image, network etc. Simply key-value pairs.
+
+
+How to integrate traefik with our docker-compose?
+See below: Docker-compose example
+=================================
+version: '3.8'
+
+services:  
+  signup-db:
+    image: docker4dotnet/sql-server:2017
+    environment:
+      - sa_password=docker4.net!
+    networks:
+      - signup-net
+
+  signup-web:
+    image: signup-web:02-06
+    environment:
+      - Dependencies:IReferenceDataLoader=SignUp.Web.ReferenceData.ApiReferenceDataLoader
+      - ReferenceDataApi:Url=http://reference-data-api/api
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=PathPrefix(`/app/`)"
+    depends_on:
+      - signup-db
+      - reference-data-api
+    networks:
+      - signup-net
+
+  reference-data-api:
+    image: reference-data-api
+    environment: 
+      - Logging:LogLevel:Default=Information
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api/`)"
+    depends_on:
+      - signup-db
+    networks:
+      - signup-net
+
+  homepage:
+    image: homepage
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.homepage.rule=PathPrefix(`/`)"
+    networks:
+      - signup-net
+
+  proxy:
+    image: traefik:v2.3-windowsservercore-1809
+    command:
+      - "--providers.docker"
+      - "--providers.docker.endpoint=npipe:////./pipe/docker_engine"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=signup-net"
+      - "--entrypoints.web.address=:80"
+      - "--api.insecure=true"
+    ports:
+      - "8080:80"
+      - "8088:8080"
+    volumes:
+      - type: npipe
+        source: \\.\pipe\docker_engine
+        target: \\.\pipe\docker_engine      
+    networks:
+      - signup-net
+
+networks:
+  signup-net:
+=================================
+Explanation:
+For container signup-web, we see new entries in labels section.
+    traefik.enabled = true -> Means this container needs to be available behind a reverse proxy.
+    traefik.http.routers.web.rule = PathPrefix('/app/')" -> Means this is routing rule. Any traffic that comes in through Traefik wth prefix '/app' will be served by this component. 
+
+For container reference-data-api,
+We've specified the same routing rule but with a different prefix i.e. /api/.
+
+For conatiner homepage(The new homepage, we ran, we're specifying it as a new container itself in docker-compose.)
+We've specified the same routing rule with prefix as '/'
+
+For Traefik itself, we're running it as a separate container in a container namely "proxy"
+We're using official traefik images.
+
+Under command section, it requires a few parameters to be added.
+Traefik can run with K8s, or Docker and connects to container runtime and finds out about container that gets created.
+It looks at the labels that we saw above. If its enabled, it'll setup the routing rules for individual containers.
+
+Under volumes, it's not a file system volume. This is a volume that lets traefik container talk to docker server on which its' running on. This is to ensure traefik can talk to docker engine and find out about other containers.
+
+Running all containers now.
+==============================
+docker-compose -f ./app/03/v4.yml up -d
+==============================
+
+Traefik itself has its own UI. We can look at http://localhost:8088
+WE can see all the routes that are setup and all the services that the proxy took in.
+
+Now, we can see the application functioning well. Using this, we can let containers talk to each other internally. All of the containers are fronted by Traefik Reverse proxy.
+
