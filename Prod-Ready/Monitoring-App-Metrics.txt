@@ -52,3 +52,55 @@ networks:
   signup-net:
 ============================
 Explanation: We have kept metrics configurable making sure that we could turn them on or off from evironment variable
+
+Running metrics:
+==============
+docker-compose -f app/04/analytics.yml up -d 
+
+docker logs 04_signup-index-handler_1
+==============
+View metrics here - http://localhost:8091/metrics
+
+For testing it, we can on/off elasticSearch and we can see events with status (Processed/failed) showing up in the metrics endpoint.
+
+Save Handler Metrics:
+The .NET Framework message handler can also be configured to record application metrics. It uses the same metric name and labels as the index handler to record event processing.
+
+The code is in the Program class and it's pretty much the same as the .NET Core component. It's configured in the Compose file save-handler.yml.
+Program - https://github.com/sixeyed/docker4.net/blob/master/src/SignUp.MessageHandlers.SaveProspect/Program.cs
+
+save-handler.yml
+==================
+version: '3.7'
+
+services:
+
+  signup-save-handler:
+    image: save-handler:04-03
+    environment:
+      - Metrics:Server:Enabled=true
+      - Metrics:Application:Enabled=true
+    ports:
+      - "8090:80"
+==================
+Running docker-compose.yml
+================
+docker-compose -f app/04/web.yml -f app/04/04-05/save-handler.yml up -d signup-save-handler
+
+# add more details at http://localhost:8081/app/SignUp
+
+docker logs 04_signup-save-handler_1
+================
+View metrics here - Browse to http://localhost:8090/metrics
+
+.NET Core Reference Data API metrics:
+Metrics should record data that you can include in dashboards to see if your app is working as expected. Message handlers record a count of failed messages, and we could raise an alert if that's above 0.
+Talks to SQL DB.
+The REST API already records HTTP processing time in the runtime metrics. We can add a lower level of detail in application metrics - in the RepositoryBase class it records the number of SQL queries.
+
+RepositoryBase - https://github.com/sixeyed/docker4.net/blob/master/src/SignUp.Api.ReferenceData/Repositories/Spec/RepositoryBase.cs
+
+Building an application dashboard
+We now have all the raw data to give us a detailed overview of how the app is performing. We can see how many prospects are signing up and we can correlate that with event processing, which will show if the handlers are keeping up with the workload.
+
+There are performance metrics in here too, and we can see if the web app is making heavy use of the API or the API is making heavy use of the database. Those can help with tuning exercises, to see if there will be useful improvements with caching.
