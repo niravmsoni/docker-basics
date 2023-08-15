@@ -279,3 +279,11 @@ docker container logs 04_signup-save-handler_1
 ===========
 
 It's counter-intuitive but you want containers to fail fast if they can't do any work.
+
+WHY ARE HEALTH CHECKS/READINESS CHECKS IMPORTANT?
+Health checks and readiness checks don't do much on a single Docker server,
+ but they'll help your apps to be self-healing in production. 
+ 
+ A container platform will restart or replace containers which have exited or are unhealthy.
+You'll also run a monitoring solution inside your container platform to see how your apps are performing and get early notice when there are problems.
+For that you need to add monitoring tools to your apps(Prometheus)
