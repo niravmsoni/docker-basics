@@ -1,0 +1,54 @@
+Intro:
+Monitoring custom written metrics for applications.
+This will give us more metric in regards to the functional aspects of our application.
+
+Application-level metrics record details about what your app is doing. You need to write code to collect the metrics you care about, and they get published in the same HTTP endpoint as the runtime metrics.
+The Prometheus client library makes it easy to collect metrics and the demo app has metrics collection in all the components, which can be enabled with more feature flags.
+
+Index handler metrics
+=========================
+The metrics you collect will depend on what your app is doing and what you want to see in your health dashboards. A good starting point is to look at where you're writing logs, and record counts of those events as metrics.
+
+For ex: In our usecase, we had a queue and we had 2 listeners(1 for saving to DB and 2nd for saving to ElasticSearch)
+We can setup Counter metric from Prometheus for this queue implementation.
+
+Code here - https://github.com/sixeyed/docker4.net/blob/master/src/SignUp.MessageHandlers.IndexProspect/Workers/QueueWorker.cs
+
+We could also include failed, success etc. in the Labels in metrics.
+
+Analytics - docker-compose.yml file
+============================
+version: "3.8"
+
+services:
+
+  signup-index-handler:
+    image: index-handler
+    environment:
+      - Metrics:Server:Enabled=true
+      - Metrics:Application:Enabled=true
+    ports:
+      - "8091:80"
+    depends_on:
+      - elasticsearch
+    networks:
+      - signup-net
+
+  elasticsearch:
+    image: elasticsearch
+    networks:
+      - signup-net
+
+  kibana:
+    image: kibana
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - signup-net
+
+networks:
+  signup-net:
+============================
+Explanation: We have kept metrics configurable making sure that we could turn them on or off from evironment variable
