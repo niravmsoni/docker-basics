@@ -1,0 +1,167 @@
+Intro:
+Parts of our app could run in Linux containers, which is a a more lightweight option (and cheaper to run in cloud environments).
+In production we'd use a container platform with some Windows servers and some Linux servers, but in development it's easier not to manage multiple VMs.
+You can run a hybrid solution using Docker Desktop, but there are some limitations.
+
+New:
+With Docker-Compose, we can also specify the build section. Using this, we can build image from there as well.
+Docker-compose -> Single place where we can define build and packaging steps
+
+Docker Compose specs can include build sections which means you can use the Compose command line to build all the images for your app.
+The v7-windows.yml spec includes just the Windows and front-end components, with build details for all the custom images.
+Build the images with Compose:
+
+Docker-Compose(Windows - DB(signup-db), .NET Framework application(signup-web), .NET Core(reference-data-api), VueJs(homepage), Traefik(proxy), .NET Framework (signup-save-handler))
+==============
+version: '3.7'
+
+services:
+  signup-db:
+    image: docker4dotnet/sql-server:2017
+    environment:
+      - sa_password=docker4.net!
+    networks:
+      - signup-net
+
+  signup-web:
+    image: signup-web:02-06
+    build:
+      context: ../..
+      dockerfile: docker/02-06-platform-integration/signup-web/v6/Dockerfile
+    environment:
+      - Dependencies:IReferenceDataLoader=SignUp.Web.ReferenceData.ApiReferenceDataLoader
+      - ReferenceDataApi:Url=http://reference-data-api/api
+      - Dependencies:IProspectSaveHandler=SignUp.Web.ProspectSave.AsynchronousProspectSaveHandler
+      - MessageQueue:Url=nats://${HOST_IP}:4222
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=PathPrefix(`/app/`)"
+    depends_on:
+      - reference-data-api
+    networks:
+      - signup-net
+
+  reference-data-api:
+    image: reference-data-api
+    build:
+      context: ../.. 
+      dockerfile: docker/02-05-packaging-dotnet-apps/reference-data-api/Dockerfile
+    environment: 
+      - Logging:LogLevel:Default=Information
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api/`)"
+    networks:
+      - signup-net
+
+  homepage:
+    image: homepage
+    build:
+      context: ../..
+      dockerfile: docker/03-03-frontend-modernize/homepage/Dockerfile
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.homepage.rule=PathPrefix(`/`)"
+    networks:
+      - signup-net
+
+  proxy:
+    image: traefik:v2.3-windowsservercore-1809
+    command:
+      - "--providers.docker"
+      - "--providers.docker.endpoint=npipe:////./pipe/docker_engine"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=signup-net"
+      - "--entrypoints.web.address=:80"
+      - "--api.insecure=true"
+    ports:
+      - "8080:80"
+      - "8088:8080"
+    volumes:
+      - type: npipe
+        source: \\.\pipe\docker_engine
+        target: \\.\pipe\docker_engine      
+    networks:
+      - signup-net
+
+  signup-save-handler:
+    image: save-handler
+    build:
+      context: ../.. 
+      dockerfile: docker/03-05-backend-async-messaging/save-handler/Dockerfile
+    environment: 
+      - Logging:LogLevel:Default=Information
+      - MessageQueue:Url=nats://${HOST_IP}:4222
+    networks:
+      - signup-net
+
+networks:
+  signup-net:
+==============
+
+Clearing old containers
+=====================
+docker container rm -f $(docker container ls -aq)
+=====================
+
+For Linux variants(NATS(message-queue), .NET Core - Save info to ElasticSearch(signup-index-handler), elasticsearch, kibana)
+===================
+version: '3.8'
+
+services:  
+  message-queue:
+    image: nats:2.1
+    ports:
+      - "4222:4222"
+    networks:
+      - signup-net
+
+  signup-index-handler:
+    image: index-handler:linux
+    build:
+      context: ../.. 
+      dockerfile: docker/03-06-backend-analytics/index-handler/Dockerfile
+      args:
+        APP_USER: root
+    depends_on:
+      - elasticsearch
+      - message-queue
+    networks:
+      - signup-net
+
+  elasticsearch:
+    image: elasticsearch:6.8.12
+    environment:
+      - discovery.type=single-node
+    networks:
+      - signup-net
+
+  kibana:
+    image: kibana:6.8.12
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - signup-net
+
+networks:
+  signup-net:
+===================
+Benefit:
+    elasticsearch and kibana official images are Linux based only.
+    So, we could easily reduce overhead of maintaining those images. WE're simply pulling the linux variants of it.
+
+So, both separate docker compose files have different applications running together. 
+Queue is being consumed by containers present in both windows and linux variants.
+So, we're doing a port mapping here -> "4222:4222"
+Since both OS's containers cannot directly talk to one another, we need to publish this port and make sure both OS's containers talk to each other using Host IP
+And from windows docker compose file, since both windows/linux containers are running ON THE SAME MACHINE, we can get them to talk to each other using an environment variable namely "HOST_IP"
+
+For getting this to work, we need to do a few extra tweaks:
+    1. Turn windows firewall OFF -> Since 4222 is non-standard port, windows will not allow it. So, by disabling firewal, we make sure communication can happen through that port.
+    2. Docker has its own networking. It does not know the IP of the host its running on. So, we need to explicitly capture the IP address in an environment variable and then docker will be able to read it from environment variable.
+
+Everything working as expected. This is a workaround for making sure we can test cross platform(OS) applications locally.
+It's clunky to publish ports when you don't need to, and to switch between Docker servers to manage your containers. And you have to use separate Docker Compose files which means your local deployment is different from other environments.
+In section 5 we'll see how to run this same app using a container platform with multiple servers. We'll use local VMs for that, but the approach would be the same in the cloud.
