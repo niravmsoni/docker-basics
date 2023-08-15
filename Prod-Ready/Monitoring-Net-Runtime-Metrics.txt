@@ -1,0 +1,39 @@
+Intro:
+Containerized applications give you new opportunities for monitoring. 
+You export metrics from each container, collect them centrally and show your whole application health in a dashboard.
+Runtime metrics tell you how hard .NET is working to run your app. 
+Windows Server Core containers store Performance Counters(https://github.com/dockersamples/aspnet-monitoring) in the usual way and you can export IIS and .NET Framework Performance Counters 
+- but it's better to add metrics to your application source code.
+
+We'll do that using Prometheus(https://prometheus.io/) which is the most popular metrics framework. Prometheus collects metrics from your apps, and your apps expose the statistics which matter to them in an HTTP endpoint.
+Prometheus - CNCF project
+It collects key metrics for .NET Framework and .NET Core apps.
+We get an HTTP endpoint that we can call to check the metrics related to CPU etc .NET Core/.NET Framework runtimes.
+
+Type of metrics
+Gauge = Records useful information of application such as version etc.
+
+How to integrate it?
+Need this NuGet package - https://github.com/prometheus-net/prometheus-net
+Configure it in appSettings.json
+{
+  "MessageQueue": {
+    "Url": "nats://message-queue:4222"
+  },
+  "Database": {
+    "MaxRetryCount": "3",
+    "MaxDelaySeconds": "10"
+  },
+  "Metrics": {
+    "Server": {
+      "Enabled" : false,
+      "Port" : 80
+    },
+    "Application": {      
+      "Enabled" : false
+    }
+  }
+}
+
+C# Code to start metric server:
+https://github.com/sixeyed/docker4.net/blob/master/src/SignUp.MessageHandlers.SaveProspect/Program.cs
