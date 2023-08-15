@@ -296,3 +296,19 @@ Logs directly are present in the standard output stream.
 We do not need any extra resiliency here since, .NET Core DOES NOT RUN AS A BACKGROUND SERVICE.
 If we check the Processes for .NET Core Container(Uses NanoServer container)
 We see dotnet.exe -> Which is the main application running in the foreground. This will cause container to exit if application crashes
+
+Now, for testing whether container exits when the main w3wp process is killed, we'd execute this commands:
+=========
+docker ps
+
+docker exec 04_signup-web_1 powershell "Stop-Service w3svc"
+
+docker ps
+docker ps -a - Here, we would see state changed to exited.
+=========
+
+So, now we can start the container again and bring the app online
+
+Operational consistency
+Now our .NET apps all behave in the same way, where logs are available from the container and an application failure causes a container exit.
+The next step is to make sure when the containers are running that the app really is working correctly.
