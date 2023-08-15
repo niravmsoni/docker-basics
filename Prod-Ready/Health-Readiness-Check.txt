@@ -197,3 +197,85 @@ docker logs 04_reference-data-api_1
 
 docker inspect 04_reference-data-api_1
 ===========
+
+Readiness Checks(Optional)
+This is to ensure our containers FAIL FAST If they can't do any work.
+Healthchecks make sure your app is working correctly, and some apps will also need a readiness check to make sure they are able to start work.
+Apps might be built with the assumption that all dependencies are available, and not be resilient to failure. 
+That's where you need a readiness check because you don't want a container which looks healthy but where the app is unable to do anything.
+
+Use-case:
+If we have a code that listens to a queue. If the connection to queue fails, code throws exception and sits idle and does not exit.
+
+Docker doesn't have built-in support for readiness, but you can add a check in the startup command. The new Dockerfile for the message handler does that.
+Updating the DockerFile with new Readiness check
+=====================
+# escape=`
+
+# container utilities
+FROM mcr.microsoft.com/dotnet/core/sdk:3.1 as utilities
+
+WORKDIR /src
+COPY src/Utilities.MessageQueueCheck/Utilities.MessageQueueCheck.csproj ./Utilities.MessageQueueCheck/
+
+WORKDIR /src/Utilities.MessageQueueCheck
+RUN dotnet restore
+
+COPY src /src
+RUN dotnet publish -r win-x64 -p:PublishSingleFile=true --self-contained true -c Release -o /out Utilities.MessageQueueCheck.csproj
+
+# app build
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8 AS builder
+
+WORKDIR C:\src
+COPY src\SignUp.sln .
+COPY src\SignUp.Core\SignUp.Core.csproj .\SignUp.Core\
+COPY src\SignUp.Entities\SignUp.Entities.csproj .\SignUp.Entities\
+COPY src\SignUp.Messaging\SignUp.Messaging.csproj .\SignUp.Messaging\
+COPY src\SignUp.Model\SignUp.Model.csproj .\SignUp.Model\
+COPY src\SignUp.Model\packages.config .\SignUp.Model\
+COPY src\SignUp.MessageHandlers.SaveProspect\SignUp.MessageHandlers.SaveProspect.csproj .\SignUp.MessageHandlers.SaveProspect\
+COPY src\SignUp.MessageHandlers.SaveProspect\packages.config .\SignUp.MessageHandlers.SaveProspect\
+RUN nuget restore .\SignUp.sln
+
+COPY src C:\src
+RUN msbuild SignUp.MessageHandlers.SaveProspect\SignUp.MessageHandlers.SaveProspect.csproj /p:OutputPath=c:\out\save-prospect\SaveProspectHandler
+
+# app image
+FROM mcr.microsoft.com/dotnet/framework/runtime:4.8
+
+ENV APP_ROOT=C:\save-prospect-handler
+
+WORKDIR ${APP_ROOT}
+CMD .\Utilities.MessageQueueCheck.exe && .\SignUp.MessageHandlers.SaveProspect.exe
+
+COPY --from=utilities C:\out\ .
+COPY --from=builder C:\out\save-prospect\SaveProspectHandler .
+COPY docker\04-03-health-readiness-checks\save-handler\App.config ${APP_ROOT}\SignUp.MessageHandlers.SaveProspect.exe.config
+COPY docker\04-03-health-readiness-checks\save-handler\config\*.config ${APP_ROOT}\config\
+=====================
+Explanation:
+Here, we added a new step "Utilities.MessageQueueCheck.csproj"
+
+And under the command, we specified this:
+"CMD .\Utilities.MessageQueueCheck.exe && .\SignUp.MessageHandlers.SaveProspect.exe"
+Meaning -> If the MessageQueueCheck.exe returns - 0, all OK. Else there's a problem and the container won't start.
+
+Repeat the test and you'll see that the handler exits if it can't access the message queue on startup.
+
+See how the handler behaves with the readiness check:
+
+Commands:
+===========
+docker container logs 04_signup-save-handler_1
+
+docker container stop 04_message-queue_1
+
+docker container restart 04_signup-save-handler_1
+
+docker ps -a
+
+docker container logs 04_signup-save-handler_1
+===========
+
+It's counter-intuitive but you want containers to fail fast if they can't do any work.
