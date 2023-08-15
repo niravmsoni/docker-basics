@@ -77,3 +77,13 @@ The Prometheus client also works for ASP.NET Framework apps - it can be integrat
 The web app configures the client library in Global.asax.cs using an HTTP module. The metrics endpoint is exposed in Metrics.ashx.cs. It's more work than .NET Core apps, but it gets you a similar set of metrics.
 Global.asax - https://github.com/sixeyed/docker4.net/blob/master/src/SignUp.Web/Global.asax.cs
 Metrics exposed here - https://github.com/sixeyed/docker4.net/blob/master/src/SignUp.Web/Metrics.ashx.cs
+
+Key-runtime metrics:
+Runtime metrics tell you how hard your app is working and how well it's handling requests. 
+The .NET Prometheus client gets you some way towards the SRE Golden Signals(https://www.infoq.com/articles/monitoring-SRE-golden-signals/):
+
+latency: http_request_duration_seconds{code="200"}
+traffic: http_requests_received_total
+errors: http_request_duration_seconds{code="500"}
+saturation: based on dotnet_total_memory_bytes and process_cpu_seconds_total
+All these components have the same UX for metrics, with a feature flag to turn the metrics server on, a metrics endpoint and an information metric.
