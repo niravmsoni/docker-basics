@@ -1,6 +1,7 @@
 Intro:
 
 This is defined specially for Windows containers.
+For Windows containers, logs are not relayed out from the container.
 Earlier, we've seen a powershell script that relays logs into output stream. But that has a lot of constraints.
     1. It reads from a single file. So, we need to ensure app writes all its logs to the same file
     2. The other constraint is that if the file does not exist or does not create, container will fall over despite the fact that application is functioning well. Which is horrible.
@@ -58,4 +59,79 @@ New Commands:
 ARG : We can replace ENV with ARG in our DockerFiles. Using that, we could easily make our DockerFiles future-proof. For ex: Today, we're using version "v1.1" but tomorrow let's say we want to use "v1.2", we could easily pass that version number as a new argument
 That way we do not have to modify dockerFile everytime.
 
-ADD : Equivalent to COPY. COPY works with local file-system whereas ADD works with files over the internet as well
+ADD : Equivalent to COPY. COPY works with local file-system whereas ADD works with files over the internet as well. This makes sure we do not need CURL or Invoke-WebRequest present within the DockerFile
+
+Relaying Event Log entries
+LogMonitor uses a JSON configuration file to specify the log sources.
+LogMonitorConfig.json sets it to read the application Event Log which is where SQL Server write entries.
+The start.ps1 ends by running ServiceMonitor to monitor the SQL Server Windows Service, and LogMonitor to relay the log entries.
+LogMonitor wraps an executing process, so Docker sees the logs relayed by LogMonitor, but if the inner process exits then so does the container.
+
+LogMonitorConfig.json
+====================
+{
+    "LogConfig": {
+      "sources": [
+        {
+          "type": "EventLog",
+          "startAtOldestRecord": false,
+          "eventFormatMultiLine": false,
+          "channels": [
+            {
+              "name": "application",
+              "level": "Information"
+            }
+          ]
+        }
+      ]
+    }
+  }
+====================
+Explanation:
+    Source = Event Log and supposed to relay information level logs.
+
+start.ps1
+=========
+param(
+    [Parameter(Mandatory=$true)]
+    [string] $sa_password,
+    
+    [Parameter(Mandatory=$true)]
+    [string] $sa_password_path
+)
+
+Write-Verbose "Starting SQL Server"
+start-service MSSQL`$SQLEXPRESS
+
+# set the SA password
+if ($sa_password_path -and (Test-Path $sa_password_path)) {
+    $password = Get-Content -Raw $sa_password_path
+    if ($password) {
+        $sa_password = $password
+        Write-Verbose "Using SA password from secret file: $sa_password_path"
+    }
+    else {
+        Write-Verbose "WARN: Using default SA password, no password in secret file: $sa_password_path"
+    }
+}
+else {
+    Write-Verbose "WARN: Using default SA password, secret file not found at: $sa_password_path"
+}
+
+if ($sa_password) {
+	Write-Verbose 'Changing SA login credentials'
+    $sqlcmd = "ALTER LOGIN sa with password='$sa_password'; ALTER LOGIN sa ENABLE;"
+    Invoke-SqlCmd -Query $sqlcmd -ServerInstance ".\SQLEXPRESS" 
+}
+else {
+    Write-Verbose 'FATAL: SA password not supplied in sa_password or sa_password_path'
+    return 1
+}
+
+Write-Verbose "Running LogMonitor and ServiceMonitor"
+C:\LogMonitor.exe C:\ServiceMonitor.exe MSSQL`$SQLEXPRESS
+=========
+Explanation:
+    Setting up SA Login password that was set in previous step.
+    LogMonitor acts as a wrapper around ServiceMonitor and SQL Server.
+    Service Monitor is going to keep an eye on SQL Server. 
