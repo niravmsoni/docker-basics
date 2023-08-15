@@ -118,3 +118,82 @@ For checking status of health checks, we could execute the "inspect" command as 
 We see Health item with below contents:
     1. Status = Healthy/Unhealthy
     2. FailingStreak = Concurrently failed health checks. By default its 3(Before flagging container as unhealthy).
+
+For using built-in HealthChecks from Docker, we need to be careful what we use.
+For Windows,
+    We could use Invoke-WebRequest. It requires Powershell in container image so it isn't suitable for .NET Core apps which could run on NanoServer or Linux.
+For Linux,
+    We could use curl but it also isn't present in all base images. For ex: Alpine based images do not have Curl installed.
+
+So, ideally a better way is for us to write our own HealthCheck code rather than rely on built-in frameworks to do the job for us.
+By doing so, we're making it cross-platform and removing the need for additional tools to be rpesent in container image.
+
+Updated DockerFile(Reference Data API - .NET Core)
+=============
+# container utilities
+FROM mcr.microsoft.com/dotnet/core/sdk:3.1 as utilities
+
+WORKDIR /src
+COPY src/Utilities.HttpCheck/Utilities.HttpCheck.csproj ./Utilities.HttpCheck/
+
+WORKDIR /src/Utilities.HttpCheck
+RUN dotnet restore
+
+COPY src /src
+RUN dotnet publish -c Release -o /out Utilities.HttpCheck.csproj
+
+# app build
+FROM mcr.microsoft.com/dotnet/core/sdk:3.1 as builder
+
+WORKDIR /src
+COPY src/SignUp.Entities/SignUp.Entities.csproj ./SignUp.Entities/
+COPY src/SignUp.Api.ReferenceData/SignUp.Api.ReferenceData.csproj ./SignUp.Api.ReferenceData/
+
+WORKDIR /src/SignUp.Api.ReferenceData
+RUN dotnet restore
+
+COPY src /src
+RUN dotnet publish -c Release -o /out SignUp.Api.ReferenceData.csproj
+
+# app image
+FROM mcr.microsoft.com/dotnet/core/aspnet:3.1
+
+EXPOSE 80
+WORKDIR /app
+ENTRYPOINT ["dotnet", "/app/SignUp.Api.ReferenceData.dll"]
+
+ENV HttpCheck:TargetUrl="http://localhost/api/ready" \
+    HttpCheck:Timeout="200"
+
+HEALTHCHECK --interval=5s CMD ["dotnet", "/app/Utilities.HttpCheck.dll"]
+
+COPY --from=utilities /out/ .
+COPY --from=builder /out/ .
+COPY ./docker/04-03-health-readiness-checks/reference-data-api/appsettings.json .
+=============
+Explanation:
+Multi-stage build with 
+    first stage as health check.
+    Second stage as application
+
+Here, within HEALTHCHECK, we see interval as 5 seconds and it will simply call the HealthCheck .dll. Meaning now, the .NET Code is responsible for doing health-checks and not the Invoke-WebRequest or CURL.
+
+So, adding this new contents in a newer docker-compose file & we will override the same configurations again.
+Commands
+========
+docker-compose -f app/04/web.yml -f app/04/04-03/reference-data-api.yml config
+
+docker-compose -f app/04/web.yml -f app/04/04-03/reference-data-api.yml build reference-data-api
+
+docker-compose -f app/04/web.yml -f app/04/04-03/reference-data-api.yml up -d reference-data-api
+========
+Health checks need to be light-weight. This is beacuse they will be frequently executed by the platform.
+
+We could again check the health status.
+===========
+docker ps
+
+docker logs 04_reference-data-api_1
+
+docker inspect 04_reference-data-api_1
+===========
