@@ -134,4 +134,165 @@ C:\LogMonitor.exe C:\ServiceMonitor.exe MSSQL`$SQLEXPRESS
 Explanation:
     Setting up SA Login password that was set in previous step.
     LogMonitor acts as a wrapper around ServiceMonitor and SQL Server.
-    Service Monitor is going to keep an eye on SQL Server. 
+    Service Monitor acts as a wrapper around SQL Server. 
+
+    Log Monitor > Watches > Service Monitor > Watches > SQL Server
+    If SQL Server stops, service monitor will know and it will stop. When service monitor stops, log monitor will also stop and so will the container.
+
+Building new SQL Server image
+There are multiple Docker Compose files for this section, breaking the app into different sets of components.
+
+web.yml defines just the core application components, without the reverse proxy or the analytics features.
+web.yml(Docker Compose)
+=======================
+version: "3.8"
+
+services:
+  signup-db:
+    image: signup-db
+    build:
+      context: ../..
+      dockerfile: docker/04-02-logging-revisited/signup-db/Dockerfile
+    environment:
+      - sa_password=docker4.net!
+    networks:
+      - signup-net
+
+  signup-web:
+    image: signup-web:04-01
+    build:
+      context: ../..
+      dockerfile: docker/04-02-logging-revisited/signup-web/Dockerfile
+    environment:
+      - Dependencies:IReferenceDataLoader=SignUp.Web.ReferenceData.ApiReferenceDataLoader
+      - ReferenceDataApi:Url=http://reference-data-api/api
+      - Dependencies:IProspectSaveHandler=SignUp.Web.ProspectSave.AsynchronousProspectSaveHandler
+    ports:
+      - "8081:80"
+    depends_on:
+      - signup-db
+      - message-queue
+    networks:
+      - signup-net
+
+  reference-data-api:
+    image: reference-data-api
+    environment:
+      - Logging:LogLevel:Default=Information
+    ports:
+      - "8082:80"
+    depends_on:
+      - signup-db
+    networks:
+      - signup-net
+
+  message-queue:
+    image: nats:2.1
+    networks:
+      - signup-net
+
+  signup-save-handler:
+    image: save-handler
+    depends_on:
+      - signup-db
+      - message-queue
+    networks:
+      - signup-net
+
+networks:
+  signup-net:
+=======================
+DB updated with Log Monitor and Service Monitor
+
+Logging for .NET FRAMEWORK applications
+Same pattern of combining LogMonitor and ServiceMonitor
+LogMonitorConfig.json is set up to relay logs from the log file
+the Dockerfile adds new stages to download the utilities and sets them as the entrypoint
+
+LogMonitorConfig.json 
+====================
+{
+    "LogConfig": {
+      "sources": [
+        {
+          "type": "File",
+          "directory": "C:\\logs",
+          "filter": "SignUp.log",
+          "includeSubdirectories": false
+        }
+      ]
+    }
+  }
+====================
+Explanation: Source is C:\\logs and type is file.
+
+Dockerfile
+===========
+# escape=`
+FROM mcr.microsoft.com/windows/nanoserver:1809 AS logmonitor
+ARG LOGMONITOR_VERSION="v1.1"
+ADD https://github.com/microsoft/windows-container-tools/releases/download/${LOGMONITOR_VERSION}/LogMonitor.exe .
+
+FROM mcr.microsoft.com/windows/nanoserver:1809 AS servicemonitor
+ARG SERVICEMONITOR_VERSION="2.0.1.10"
+ADD https://dotnetbinaries.blob.core.windows.net/servicemonitor/${SERVICEMONITOR_VERSION}/ServiceMonitor.exe .
+
+# app
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8 AS builder
+
+WORKDIR C:\src
+COPY src\SignUp.Web.sln .
+COPY src\SignUp.Core\SignUp.Core.csproj .\SignUp.Core\
+COPY src\SignUp.Entities\SignUp.Entities.csproj .\SignUp.Entities\
+COPY src\SignUp.Messaging\SignUp.Messaging.csproj .\SignUp.Messaging\
+COPY src\SignUp.Model\SignUp.Model.csproj .\SignUp.Model\
+COPY src\SignUp.Web\SignUp.Web.csproj .\SignUp.Web\
+COPY src\SignUp.Model\packages.config .\SignUp.Model\
+COPY src\SignUp.Web\packages.config .\SignUp.Web\
+RUN nuget restore SignUp.Web.sln
+
+COPY src C:\src
+RUN msbuild SignUp.Web\SignUp.Web.csproj /p:OutputPath=c:\out /p:Configuration=Release
+
+# app image
+FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop';"]
+
+ENV APP_ROOT=C:\web-app `
+    LOGS_ROOT=C:\logs
+
+ENTRYPOINT C:\LogMonitor.exe C:\ServiceMonitor.exe w3svc
+
+WORKDIR ${LOGS_ROOT}
+WORKDIR ${APP_ROOT}
+RUN New-WebApplication -Name 'app' -Site 'Default Web Site' -PhysicalPath $env:APP_ROOT
+
+COPY --from=logmonitor /LogMonitor.exe /LogMonitor.exe
+COPY --from=servicemonitor /ServiceMonitor.exe /ServiceMonitor.exe
+COPY --from=builder C:\out\_PublishedWebsites\SignUp.Web ${APP_ROOT} 
+
+COPY docker\04-02-logging-revisited\signup-web\Web.config ${APP_ROOT}
+COPY docker\04-02-logging-revisited\signup-web\config\*.config ${APP_ROOT}\config\
+COPY docker\04-02-logging-revisited\signup-web\LogMonitorConfig.json C:\LogMonitor\
+===========
+Explanation:
+Same content as SQL Server. Will be used from Cache used by SQL Server
+Updated entrypoint to be C:\LogMonitor.exe C:\ServiceMonitor.exe w3svc
+
+Since, we've removed reverse proxy, all the Port mapping needs to be there in the docker compose.
+
+App working fine.
+
+Checking logs now:
+We're able to see all logs correctly.
+
+If we check the processes for SQL Server container and .NET Framework container,
+we do see w3wp.exe -> Main worker process, 
+We do see ServiceMonitor.exe -> Service Monitor process(With very little RAM And CPU)
+We do see LogMonitor.exe -> Log Monitor process(With very little RAM And CPU)
+
+For Reference-data-api(.NET Core API),
+Logs directly are present in the standard output stream.
+We do not need any extra resiliency here since, .NET Core DOES NOT RUN AS A BACKGROUND SERVICE.
+If we check the Processes for .NET Core Container(Uses NanoServer container)
+We see dotnet.exe -> Which is the main application running in the foreground. This will cause container to exit if application crashes
