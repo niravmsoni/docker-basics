@@ -1,0 +1,120 @@
+Intro:
+
+Docker monitors the startup process in the container and if that process ends then the container exits. This is a basic liveness check which doesn't ensure the app is actually working - a web server could still be running but returning 503 responses to every request because it's maxed out.
+You can add a healthcheck to container images so Docker tests your app and makes sure it actually is healthy. We'll see some different ways to approach that in this lesson.
+The other side of health is a readiness check which confirms your app is actually able to start work. You need that for apps which don't fail gracefully if they can't reach dependencies, and we'll see how to build that logic into the container startup command.
+
+This is an important step to make sure the applications are self-healing.
+Docker supports health check with "HEALTHCHECK" command
+
+Updated DockerFile
+===================
+# escape=`
+FROM mcr.microsoft.com/windows/nanoserver:1809 AS logmonitor
+ARG LOGMONITOR_VERSION="v1.1"
+ADD https://github.com/microsoft/windows-container-tools/releases/download/${LOGMONITOR_VERSION}/LogMonitor.exe .
+
+FROM mcr.microsoft.com/windows/nanoserver:1809 AS servicemonitor
+ARG SERVICEMONITOR_VERSION="2.0.1.10"
+ADD https://dotnetbinaries.blob.core.windows.net/servicemonitor/${SERVICEMONITOR_VERSION}/ServiceMonitor.exe .
+
+# app
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8 AS builder
+
+WORKDIR C:\src
+COPY src\SignUp.Web.sln .
+COPY src\SignUp.Core\SignUp.Core.csproj .\SignUp.Core\
+COPY src\SignUp.Entities\SignUp.Entities.csproj .\SignUp.Entities\
+COPY src\SignUp.Messaging\SignUp.Messaging.csproj .\SignUp.Messaging\
+COPY src\SignUp.Model\SignUp.Model.csproj .\SignUp.Model\
+COPY src\SignUp.Web\SignUp.Web.csproj .\SignUp.Web\
+COPY src\SignUp.Model\packages.config .\SignUp.Model\
+COPY src\SignUp.Web\packages.config .\SignUp.Web\
+RUN nuget restore SignUp.Web.sln
+
+COPY src C:\src
+RUN msbuild SignUp.Web\SignUp.Web.csproj /p:OutputPath=c:\out /p:Configuration=Release
+
+# app image
+FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop';"]
+
+ENV APP_ROOT=C:\web-app `
+    LOGS_ROOT=C:\logs
+
+ENTRYPOINT C:\LogMonitor.exe C:\ServiceMonitor.exe w3svc
+
+WORKDIR ${LOGS_ROOT}
+WORKDIR ${APP_ROOT}
+RUN New-WebApplication -Name 'app' -Site 'Default Web Site' -PhysicalPath $env:APP_ROOT
+
+HEALTHCHECK --interval=5s `
+ CMD powershell -command `
+    try { `
+     $response = Invoke-WebRequest http://localhost/app/SignUp -UseBasicParsing; `
+     if ($response.StatusCode -eq 200) { return 0} `
+     else {return 1}; `
+    } catch { return 1 }
+
+COPY --from=logmonitor /LogMonitor.exe /LogMonitor.exe
+COPY --from=servicemonitor /ServiceMonitor.exe /ServiceMonitor.exe
+COPY --from=builder C:\out\_PublishedWebsites\SignUp.Web ${APP_ROOT} 
+
+COPY docker\04-03-health-readiness-checks\signup-web\Web.config ${APP_ROOT}
+COPY docker\04-03-health-readiness-checks\signup-web\config\*.config ${APP_ROOT}\config\
+COPY docker\04-03-health-readiness-checks\signup-web\LogMonitorConfig.json C:\LogMonitor\
+===================
+Explanation:
+This Dockerfile for the ASP.NET app adds a HEALTHCHECK instruction. Docker will run the healthcheck command inside the container, and use the exit code to determine the container health - 0 means healthy.
+
+How does healthcheck works?
+If docker sees healthcheck command within the dockerFile, it takes a look at the interval(This is how frequently do we want the command to execute).
+From the command, we can make a Web-Request to the URL and make sure we return 0 in case of 200OK & 1 for all other status codes
+
+So, every 5 seconds, Docker will make a call to the localhost Signup URL and examine response code.
+If StatusCode = 200 > Returns 0(Health check passed)
+Else > Return 1(Health check failed)
+CATCH(Health check failed)
+
+Looking at docker-compose file:
+==============================
+version: "3.8"
+
+services:
+
+  signup-web:
+    image: signup-web:04-03
+    build:
+      dockerfile: docker/04-03-health-readiness-checks/signup-web/Dockerfile
+==============================
+
+NEW - We can join multiple docker-compose files. For checking the output, we can pass the config flag like this.
+====================================================
+docker-compose -f app/04/web.yml -f app/04/04-03/signup-web.yml config
+====================================================
+How it works?
+When we join multiple docker compose files together, the later files(After the first ones) act as an OVERRIDE to the earlier files.
+
+Here, since its' a config command, we can see that the override has happened.
+For signup-web container, it has picked the contents(build and image) from the overridden file.
+
+Override files are a great way to manage your app defintions with Compose, so they don't get bloated. You can separate build details from runtime config, and have different settings for different environments.
+
+Build and run the updated web app with the healthcheck. Executing the command now:
+=========================
+docker-compose -f app/04/web.yml -f app/04/04-03/signup-web.yml build signup-web
+
+docker-compose -f app/04/web.yml -f app/04/04-03/signup-web.yml up -d
+
+docker ps
+=========================
+You'll see the web container has a different status from the others - health: starting
+If we execute docker ps after sometime, we see status turned to "status(healthy)"
+
+For checking status of health checks, we could execute the "inspect" command as below:
+======================
+"docker inspect 04_signup-web_1"
+======================
+We see Health item with below contents:
+    1. Status = Healthy/Unhealthy
+    2. FailingStreak = Concurrently failed health checks. By default its 3(Before flagging container as unhealthy).
