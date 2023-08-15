@@ -37,3 +37,43 @@ Configure it in appSettings.json
 
 C# Code to start metric server:
 https://github.com/sixeyed/docker4.net/blob/master/src/SignUp.MessageHandlers.SaveProspect/Program.cs
+
+In a separate compose file, setting environment variable to turn metrics on.
+===================
+version: '3.7'
+
+services:
+
+  signup-save-handler:
+    image: save-handler:04-03
+    environment:
+      - Metrics:Server:Enabled=true
+    ports:
+      - "8090:80"
+===================
+
+Run container
+===========
+cd $env:docker4dotnet
+
+docker-compose -f app/04/web.yml -f app/04/04-04/save-handler.yml up -d signup-save-handler
+
+docker logs 04_signup-save-handler_1
+===========
+
+Browse metrics endpoint - http://localhost:8090/metrics
+
+Metrics to .NET Core apps:
+The Prometheus client library can be integrated with the ASP.NET Core processing pipeline. It records HTTP request processing times for every controller.
+
+It's configured in the reference data API using the familiar ASP.NET services pattern
+Startup - https://github.com/sixeyed/docker4.net/blob/master/src/SignUp.Api.ReferenceData/Startup.cs
+Metrics exposed here - http://localhost:8082/metrics
+We can build up dashboards using information provided by the metric endpoint.
+
+Metrics to .NET Framework apps:
+The Prometheus client also works for ASP.NET Framework apps - it can be integrated to collect HTTP processing metrics. It will break metrics down to controller level for MVC apps, but for WebForms apps you'll only see the high-level details.
+
+The web app configures the client library in Global.asax.cs using an HTTP module. The metrics endpoint is exposed in Metrics.ashx.cs. It's more work than .NET Core apps, but it gets you a similar set of metrics.
+Global.asax - https://github.com/sixeyed/docker4.net/blob/master/src/SignUp.Web/Global.asax.cs
+Metrics exposed here - https://github.com/sixeyed/docker4.net/blob/master/src/SignUp.Web/Metrics.ashx.cs
