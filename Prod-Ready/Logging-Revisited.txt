@@ -1,0 +1,61 @@
+Intro:
+
+This is defined specially for Windows containers.
+Earlier, we've seen a powershell script that relays logs into output stream. But that has a lot of constraints.
+    1. It reads from a single file. So, we need to ensure app writes all its logs to the same file
+    2. The other constraint is that if the file does not exist or does not create, container will fall over despite the fact that application is functioning well. Which is horrible.
+
+So, we need to come up with a robust approach.
+Now we'll revisit logging for containers where the application process runs in the background. We'll use the LogMonitor(https://github.com/microsoft/windows-container-tools/tree/main/LogMonitor) tool from Microsoft, which is built for containers and can relay logs from multiple sources to the standard output stream.
+And we'll couple that with the ServiceMonitor(https://github.com/microsoft/IIS.ServiceMonitor) tool, which Microsoft also provide for containerized applications. It monitors a background Windows Service and bubbles up failures, so if the Windows Service exits then the container exits.
+
+
+LogMonitor
+Supported log sources include:
+    Event Logs
+    ETW Providers
+    Custom App logs
+
+Supported output locations include:
+    STDOUT
+Log Monitor is configured via the Log Monitor Config json file. The default location for the config file is: C:/LogMonitor/LogMonitorConfig.json or location passed to the LogMonitor.exe via /CONFIG switch.
+The log tool is supported for Windows, Server Core, and Nano images.
+
+ServiceMonitor - Monitors background service(w3wp) on which our application is running. In case if it fails, the service monitor will also exit. And we will know that there are some sort of issues with our application.
+
+DockerFile with Logging added SQL Server
+=====================
+# LogMonitor - https://github.com/microsoft/windows-container-tools/tree/master/LogMonitor
+FROM mcr.microsoft.com/windows/nanoserver:1809 AS logmonitor
+ARG LOGMONITOR_VERSION="v1.1"
+ADD https://github.com/microsoft/windows-container-tools/releases/download/${LOGMONITOR_VERSION}/LogMonitor.exe .
+
+# ServiceMonitor - https://github.com/microsoft/IIS.ServiceMonitor
+FROM mcr.microsoft.com/windows/nanoserver:1809 AS servicemonitor
+ARG SERVICEMONITOR_VERSION="2.0.1.10"
+ADD https://dotnetbinaries.blob.core.windows.net/servicemonitor/${SERVICEMONITOR_VERSION}/ServiceMonitor.exe .
+
+# sql server
+FROM docker4dotnet/sql-server:2017
+
+ENV SA_PASSWORD="docker4.net!"
+
+COPY --from=logmonitor /LogMonitor.exe /LogMonitor.exe
+COPY --from=servicemonitor /ServiceMonitor.exe /ServiceMonitor.exe
+
+COPY docker/04-02-logging-revisited/signup-db/start.ps1 /
+COPY docker/04-02-logging-revisited/signup-db/LogMonitorConfig.json /LogMonitor/
+=====================
+Explanation: 
+Multi-stage build. With first 2 steps, we're downloading LogMonitor and ServiceMonitor .exe's.
+It does a few new things:
+
+    Downloads the LogMonitor and ServiceMonitor tools
+    Overrides the default SA password from the base image
+    Replaces the startup script from the base image
+
+New Commands:
+ARG : We can replace ENV with ARG in our DockerFiles. Using that, we could easily make our DockerFiles future-proof. For ex: Today, we're using version "v1.1" but tomorrow let's say we want to use "v1.2", we could easily pass that version number as a new argument
+That way we do not have to modify dockerFile everytime.
+
+ADD : Equivalent to COPY. COPY works with local file-system whereas ADD works with files over the internet as well
