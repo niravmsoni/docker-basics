@@ -26,4 +26,22 @@ With Orchestrator:
     Cluster has own API that we talk to. we don't connect to individual servers and orchestrator follows same desired state approach.
 
     So, in a nutshell, we model out the application in a YAML file and then send it out to orchestrator. It then works out what it needs to do to go from CURRENT STATE to DESIRED STATE.
-    
+    The Orchestrator also takes care of networking between containers even if they're running on different servers/different OS.
+    It also takes care of Ingress(i.e. External traffic coming into cluster like HTTP request)
+    With application model, we need configure routing of incoming requests and cluster will take care of directing traffic to correct containers on whichever server they're running on.
+    So, in a nutshell, application model will contain:
+        Compute Layer - Servers on which containers will run
+        Networking Layer - External/internal communication
+            Internal communication
+            External Routing
+        Storage Layer
+            Volume mounts
+            Persistent storage
+    Cluster maintains its own database that stores all application models and provides storage utilities for our containers to use[Equivalent to Volume mounts]
+    WE can have HDD/SDD to store State of our containers and make it accessible within the cluster
+    This includes configuration files that are loaded inside the application components
+    Also secrets for storing sensitive information
+
+
+
+
