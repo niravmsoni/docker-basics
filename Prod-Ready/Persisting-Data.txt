@@ -37,6 +37,66 @@ Volumes live independently of the container they're attached to, so when you rem
 
 This new Dockerfile for the web app uses a volume for the log directory.
 
+DockerFile
+============
+# escape=`
+FROM mcr.microsoft.com/windows/nanoserver:1809 AS logmonitor
+ARG LOGMONITOR_VERSION="v1.1"
+ADD https://github.com/microsoft/windows-container-tools/releases/download/${LOGMONITOR_VERSION}/LogMonitor.exe .
+
+FROM mcr.microsoft.com/windows/nanoserver:1809 AS servicemonitor
+ARG SERVICEMONITOR_VERSION="2.0.1.10"
+ADD https://dotnetbinaries.blob.core.windows.net/servicemonitor/${SERVICEMONITOR_VERSION}/ServiceMonitor.exe .
+
+# app
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8 AS builder
+
+WORKDIR C:\src
+COPY src\SignUp.Web.sln .
+COPY src\SignUp.Core\SignUp.Core.csproj .\SignUp.Core\
+COPY src\SignUp.Entities\SignUp.Entities.csproj .\SignUp.Entities\
+COPY src\SignUp.Messaging\SignUp.Messaging.csproj .\SignUp.Messaging\
+COPY src\SignUp.Model\SignUp.Model.csproj .\SignUp.Model\
+COPY src\SignUp.Web\SignUp.Web.csproj .\SignUp.Web\
+COPY src\SignUp.Model\packages.config .\SignUp.Model\
+COPY src\SignUp.Web\packages.config .\SignUp.Web\
+RUN nuget restore SignUp.Web.sln
+
+COPY src C:\src
+RUN msbuild SignUp.Web\SignUp.Web.csproj /p:OutputPath=c:\out /p:Configuration=Release
+
+# app image
+FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop';"]
+
+ENV APP_ROOT=C:\web-app `
+    LOGS_ROOT=C:\logs
+    
+ENTRYPOINT C:\LogMonitor.exe C:\ServiceMonitor.exe w3svc
+
+WORKDIR ${LOGS_ROOT}
+WORKDIR ${APP_ROOT}
+RUN New-WebApplication -Name 'app' -Site 'Default Web Site' -PhysicalPath $env:APP_ROOT
+
+HEALTHCHECK --interval=5s `
+ CMD powershell -command `
+    try { `
+     $response = Invoke-WebRequest http://localhost/app/SignUp -UseBasicParsing; `
+     if ($response.StatusCode -eq 200) { return 0} `
+     else {return 1}; `
+    } catch { return 1 }
+
+VOLUME C:\logs
+
+COPY --from=logmonitor /LogMonitor.exe /LogMonitor.exe
+COPY --from=servicemonitor /ServiceMonitor.exe /ServiceMonitor.exe
+COPY --from=builder C:\out\_PublishedWebsites\SignUp.Web ${APP_ROOT} 
+
+COPY docker\04-06-persistent-state\signup-web\Web.config ${APP_ROOT}
+COPY docker\04-06-persistent-state\signup-web\config\*.config ${APP_ROOT}\config\
+COPY docker\04-06-persistent-state\signup-web\LogMonitorConfig.json C:\LogMonitor\
+============
+
 Build and run the new web container and check the configuration:
 ===================================
 docker-compose -f app/04/web.yml -f app/04/04-06/signup-web.yml build signup-web
@@ -122,6 +182,28 @@ log4net.config
 </log4net>
 ============
 
+LogMonitorConfig.json
+================
+{
+    "LogConfig": {
+      "sources": [
+        {
+          "type": "File",
+          "directory": "C:\\logs",
+          "filter": "SignUp.log",
+          "includeSubdirectories": false
+        },
+        {
+          "type": "File",
+          "directory": "C:\\other-logs",
+          "filter": "SignUp.log",
+          "includeSubdirectories": false
+        }
+      ]
+    }
+  }
+================
+
 signup-web-2.yml
 ===============
 version: "3.8"
@@ -146,3 +228,69 @@ services:
 volumes:
   signup-web-logs:
 ===============
+Explanation: 
+
+type: bind
+    This is similar to using -v flag. We're mounting contents from local machine into the container. This is as good as taking file from source location and replacing them in the target location inside the container.
+
+type: volume
+    This is the source and target mapping.
+
+Running the web container with a named volume
+Docker Compose has the same desired-state approach for volumes as for containers. The signup-web-logs volume doesn't exist so Compose will create it when you bring the application up.
+
+Replace the web container with the new configuration:
+=================
+docker-compose -f app/04/web.yml -f app/04/04-06/signup-web-2.yml up -d signup-web
+
+docker logs 04_signup-web_1
+
+docker exec 04_signup-web_1 powershell ls C:\logs
+
+docker exec 04_signup-web_1 powershell ls C:\other-logs
+=================
+Compose creates the volume with the default driver - the local disk.
+
+Working with named volumes
+Volumes are first-class objects in Docker, you can work with them using the command line.
+
+Look at the configuration of the new volume:
+==============
+docker volume ls
+
+docker volume inspect 04_signup-web-logs
+
+docker volume inspect 04_signup-web-logs -f '{{.Mountpoint}}'
+==============
+The local volume driver uses the disk on the Docker server.
+Volumes can be:
+  1. Disk in local machine
+  2. Network storage component
+  3. Network File share
+
+Ideally on PROD, we should use something like Network File share etc.
+
+Named volumes can be reused between containers
+This is how you persist state between updates. You can remove the original container and the volume remains. Start a new container with the same volume mount and it will load the existing named volume.
+
+Replace the web container and check the filesystem in the replacement:
+===================
+docker rm -f 04_signup-web_1
+
+docker volume ls
+
+docker-compose -f app/04/web.yml -f app/04/04-06/signup-web-2.yml up -d signup-web
+
+cat "$(docker volume inspect 04_signup-web-logs -f '{{.Mountpoint}}')\SignUp.log"
+
+docker logs 04_signup-web_1
+===================
+Volumes are still there even after removing container.
+The new container sees all the log entries written by the previous container.
+We see logs are appended into the file where existing logs were written.
+
+
+Configuring stateful apps to use volumes
+Containers work best for stateless apps because they work well in a dynamic environment - work can be load-balanced between containers easily and containers can come and go without affecting end users.
+
+You can run stateful apps in containers provided your app can be configured to write data files to a specific location. That location can be a named volume or a bind mount on the server. In the next lesson we'll apply that approach to the SQL Server database.
