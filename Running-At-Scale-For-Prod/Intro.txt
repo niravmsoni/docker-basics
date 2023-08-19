@@ -1,0 +1,29 @@
+Intro:
+Ideally, on PROD, we would have mixed bag of servers(Windows/Liunux), all of them would have Docker installed.
+And they'd be all connected together using Orchestrator.
+3 popular choice:
+    1. K8
+    2. Docker Swarm(Docker - CNCF)
+    3. Nomad (HashiCorp)
+
+All of them support:
+    1. Hybrid OS(Both Windows and Linux)
+    2. Container Runtime(Docker)
+    3. Orchestrator(The tool manages the containers for us)
+
+Difference between running Docker locally vs with Orchestrator on PROD is:
+With Local:
+    We'd be talking directly with Docker API to create/maintain containers for us.
+
+With Orchestrator:
+    We'd be talking to the Orchestration tool's API.
+    Instead of telling it to create containers, we're going to pass a model of our application defined in YAML and we'd send it to API using command line(Similar to Docker compose)
+    Orchestrator will then create containers for us and distribute them across servers in cluster.
+    It will watch those containers. 
+    If there's a problem with one of our container, it can be restarted ot replaced
+    If there's a problem with one of the servers(If it goes offline), orchestrator starts new containers to replace any that got lost on server that's no longer there.
+
+    Cluster has own API that we talk to. we don't connect to individual servers and orchestrator follows same desired state approach.
+
+    So, in a nutshell, we model out the application in a YAML file and then send it out to orchestrator. It then works out what it needs to do to go from CURRENT STATE to DESIRED STATE.
+    
