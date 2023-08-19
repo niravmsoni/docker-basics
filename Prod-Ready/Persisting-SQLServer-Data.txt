@@ -1,0 +1,204 @@
+Introduction:
+With SQL Server, when we create a new DB, 2 files are created:
+    MDB File - DB itself
+    LDB File - Log file.
+
+Database containers are great for non-production environments where you don't need high-availability and resilient storage. You get all the benefits of fast and lightweight containers and your Docker image can include the database schema.
+Isolating the database files from the container with volume mounts means you can update the container with a new version of the schema or a SQL Server upgrade, and attach all the existing data.
+
+"Configuring SQL Server for data mounts"
+SQL Server uses a default file path for database files. To use volume mounts for data you need to create the database with a specific file location.
+
+Then your startup script in the container needs to do a couple of things:
+
+check the data file path to see if any files are already there
+if so then create the database and attach those files
+if not then create a new database using that file path
+The logic isn't too complex - it's in the new start.ps1, which overwrites the script from the base image in the Dockerfile.
+
+This app uses Entity Framework to deploy the schema, but the database container could do that with a Dacpac or a tool like Flyway.
+
+start.ps1
+===========
+param(
+    [Parameter(Mandatory=$true)]
+    [string] $sa_password,
+    
+    [Parameter(Mandatory=$true)]
+    [string] $sa_password_path
+)
+
+Write-Verbose "Starting SQL Server"
+start-service MSSQL`$SQLEXPRESS
+
+# set the SA password
+if ($sa_password_path -and (Test-Path $sa_password_path)) {
+    $password = Get-Content -Raw $sa_password_path
+    if ($password) {
+        $sa_password = $password
+        Write-Verbose "Using SA password from secret file: $sa_password_path"
+    }
+    else {
+        Write-Verbose "WARN: Using default SA password, no password in secret file: $sa_password_path"
+    }
+}
+else {
+    Write-Verbose "WARN: Using default SA password, secret file not found at: $sa_password_path"
+}
+
+if ($sa_password) {
+	Write-Verbose 'Changing SA login credentials'
+    $sqlcmd = "ALTER LOGIN sa with password='$sa_password'; ALTER LOGIN sa ENABLE;"
+    Invoke-SqlCmd -Query $sqlcmd -ServerInstance ".\SQLEXPRESS" 
+}
+else {
+    Write-Verbose 'FATAL: SA password not supplied in sa_password or sa_password_path'
+    return 1
+}
+
+Write-Verbose "Initializing SignUp database"
+
+# attach or create database: 
+$mdfPath = "$($env:DATA_FOLDER)\SignUp.mdf"
+$ldfPath = "$($env:DATA_FOLDER)\SignUp.ldf"
+$sqlcmd = 'CREATE DATABASE SignUp'
+
+if ((Test-Path $mdfPath) -eq $true) {
+    $sqlcmd = "$sqlcmd ON (FILENAME = N'$mdfPath')"
+    $sqlcmd = "$sqlcmd LOG ON (FILENAME = N'$ldfPath')"    
+    $sqlcmd = "$sqlcmd FOR ATTACH"
+    Write-Verbose "Attaching existing data files from path: $env:DATA_FOLDER"
+}
+else {
+    mkdir -p $env:DATA_FOLDER
+    $sqlcmd = "$sqlcmd ON (NAME = SignUp_dat, FILENAME = N'$mdfPath')"
+    $sqlcmd = "$sqlcmd LOG ON (NAME = SignUp_log, FILENAME = N'$ldfPath')"
+    Write-Verbose "Creating database with data file path: $env:DATA_FOLDER"
+}
+
+Write-Verbose "Invoke-Sqlcmd -Query $($sqlcmd) -ServerInstance '.\SQLEXPRESS'"
+Invoke-Sqlcmd -Query $sqlcmd -ServerInstance ".\SQLEXPRESS"
+
+Write-Verbose "Running LogMonitor and ServiceMonitor"
+C:\LogMonitor.exe C:\ServiceMonitor.exe MSSQL`$SQLEXPRESS
+===========
+Explanation:
+    This file container CREATE Database comand. This will create a specific DB namely "SignUp".
+    We're going to pass the path from environment variable which will create the MDF path and check if the file SignUp.MDF file exists in the location?
+        If so, in the CREATE DATABASE COMMAND, WE WILL USE "FOR ATTACH" so that it will attach to the existing MDF file.
+
+        Update the database container
+The current database container is running without any volumes. When it gets replaced all the existing data will be lost, because it's only stored in the container's writeable layer.
+
+Build the new database image and replace the container:
+=============
+docker-compose -f app/04/web.yml -f app/04/04-07/signup-db.yml build signup-db
+
+docker-compose -f app/04/web.yml -f app/04/04-07/signup-db.yml up -d signup-db
+
+docker container logs 04_signup-db_1 -f
+
+# Ctrl-C to exit the log follow
+=============
+
+Confirm the data file location
+The web application is broken right now because the database schema is empty. Restarting the web container causes it to deploy the schema to the new database.
+
+Restart the web and handler containers and check the data storage:
+==============
+docker container restart 04_signup-web_1 04_signup-save-handler_1
+
+# add some details at http://localhost:8081/app/SignUp
+
+docker container exec 04_signup-db_1 powershell `
+  "Invoke-SqlCmd -Query 'SELECT * FROM Prospects' -Database SignUp"
+
+docker container exec 04_signup-db_1 powershell ls C:/data
+==============
+The data and log files are in the expected location, but this is still in the container's writeable layer.
+So, we can use a volume mount to make sure it gets mapped to an external volume spec on local disk
+
+
+Run a persistent database with a bind mount
+The Compose override signup-db-2.yml uses a bind mount in the volume spec to store the database files on the local disk.
+
+You can use a named volume instead, but the bind mount lets you specify the path on the host.
+
+Replace the database container with the volume mount spec:
+================
+mkdir -p C:/databases 
+
+docker-compose -f app/04/web.yml -f app/04/04-07/signup-db-2.yml up -d signup-db
+
+docker container exec 04_signup-db_1 powershell ls C:/data
+
+ls C:/databases
+===========
+The data and log files are mounted into the container filesystem from the host.
+
+signup-db-2.yml
+============
+version: "3.8"
+
+services:
+
+  signup-db:
+    image: signup-db:04-07
+    build:
+      dockerfile: docker/04-07-persistent-databases/signup-db/Dockerfile
+    volumes:
+      - type: bind
+        source: C:\databases
+        target: C:\data
+============
+
+============
+
+Check the database is still working
+Volume mounts can use different sources - it's the C: drive on the host here but it could be a RAID array or a network share.
+
+Different filesystems have different feature sets and performance characteristics so you need to test your apps.
+
+Restart the app containers and test the save workflow:
+
+docker container restart 04_signup-web_1 04_signup-save-handler_1
+
+# add more details at http://localhost:8081/app/SignUp
+
+docker container exec 04_signup-db_1 powershell `
+  "Invoke-SqlCmd -Query 'SELECT * FROM Prospects' -Database SignUp"
+Only the new row is there, but now the data is stored outside of the container.
+
+Replace the database container
+You'll replace containers any time the image changes with an app update, or the specification of the container environment changes.
+
+signup-db-3.yml publishes the SQL Server port which is an environment change, so it needs a container replacement. The spec uses the same volume mount, so the new database will attach the existing data files.
+
+Replace the container and check the data is still there:
+============
+docker inspect 04_signup-db_1 -f '{{.Id}}'
+
+docker-compose -f app/04/web.yml -f app/04/04-07/signup-db-3.yml up -d signup-db
+
+docker logs 04_signup-db_1 -f
+
+# Ctrl-C when the database is attached
+
+docker inspect 04_signup-db_1 -f '{{.Id}}'
+
+docker container exec 04_signup-db_1 powershell `
+  "Invoke-SqlCmd -Query 'SELECT * FROM Prospects' -Database SignUp"
+  ============
+The new container is using the existing data files, bind mounted from the host.
+
+This is a nice way to make sure when we up a DB container, if we want data inserted in existing DB to be there in the container.
+If so, we need to use the Mount option.
+
+If we want fresh set of DB everytime we run it we can achieve it without mount.
+
+DO WE EVER RUN DB CONTAINERS?
+YES - BUT ONLY ON LOWER ENVIRONMENTS.
+FOR PROD, WE'd be using a managed DB from cloud.
+This pattern for database containers works well across the team. Developers can run containers without a mount and get a clean database every time they need one. In test environments you can use the same container image but with a mount to preserve user data and test schema updates.
+
+In production you'll run a managed SQL service or an external database server, and just configure the app containers to use it. But if you package your schema in the Docker image you can use a container to deploy schema updates to the production database.
