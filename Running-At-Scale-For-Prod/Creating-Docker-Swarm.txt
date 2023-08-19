@@ -1,0 +1,16 @@
+Swarm mode is the orchestration feature built into Docker. It's a production-grade orchestrator which uses the familiar Docker Compose format to model applications.
+We'll create a Swarm cluster for this section and deploy some apps to get a feel for running containers in production.
+If you plan on using a different orchestrator - like K8s or Nomad - the patterns are the same, so what you learn here will still apply.
+
+For simulating VMs on local machine, we can use Vagrant to setup multiple VMs on a single machine.
+We need to have docker installed and they need to be joined into a cluster.
+
+Swarm has 2 types of nodes:
+    Manager
+    Worker
+
+We need to initialize the Swarm on the node that's going to be our manager node.
+
+With Docker, we get 2 modes:
+    1. Standalone Mode
+    2. Swarm mode - Using which we can connect into the cluster and have orchestration capabilities
