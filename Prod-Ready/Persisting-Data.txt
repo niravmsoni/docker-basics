@@ -1,0 +1,148 @@
+Intro:
+Docker creates the environment for a container, which includes the filesystem. The C: drive on Windows containers and the root path on Linux containers are composed of multiple sources - the container image, volume mounts and the container's writeable layer.
+Image layers are read-only so they can be shared between images and containers. The writeable layer lets each container modify files without affecting other containers. But the writeable layer has the same lifespan as the container - remove the container and you'll lose all the data it wrote.
+For stateful apps you can use volumes and mounts to separate the data lifecycle from the container lifecycle.
+Most of containers are stateless. If the container needs an update, it needs to be removed and run again with newer configuration.
+What if we want some sort of persistence with containers? Meaning when a new container comes up, it should be able to access data that the previous container wrote.
+
+That's when volume mapping comes into picture.
+
+When we create a container, it sets up filesystem for us.
+For Windows containers,
+    We get C:/ drive
+For Linux,
+    We get root directory
+
+Any data that's written inside the container has the same lifecycle as the container itself.
+
+Commands:
+========
+docker logs 04_signup-web_1
+
+docker exec 04_signup-web_1 powershell ls C:\logs
+
+docker exec 04_signup-web_1 powershell ls C:\web-app
+========
+
+We can see that with the 2nd command, we're able to see Log file that all our application logs go and then with 3rd command, we're able to see all files under our web-app
+Docker brings all of these layers together and runs it in a virtual environment.
+
+Volumes
+    Are equivalent to USB drives or external HDDs that can be attached to containers and they live outside the life cycle of the container.
+
+Specifying volumes in the Docker image
+We've already used volume mounts for containers, and there's another way to use them - as Docker Volume objects which you can specify in the Dockerfile.
+
+Volumes live independently of the container they're attached to, so when you remove a container the volume still exists and you can access the files which the container wrote to the volume.
+
+This new Dockerfile for the web app uses a volume for the log directory.
+
+Build and run the new web container and check the configuration:
+===================================
+docker-compose -f app/04/web.yml -f app/04/04-06/signup-web.yml build signup-web
+
+docker-compose -f app/04/web.yml -f app/04/04-06/signup-web.yml up -d signup-web
+
+docker inspect 04_signup-web_1
+
+docker volume ls
+===================================
+
+We see inside DockerFile, there's a VOLUME command.
+===========
+VOLUME C:logs
+===========
+
+With this, docker creates anonymous volumes which are managed by Docker for us.
+It'd assign a random name to it(Combination of letters, numbers)
+Now, if we run docker inspect command, under Mounts section, we do see volume information coming up
+Source of the volume = Physical location on our machine.
+Destination of volume is whatever we specify in the VOLUME command.
+
+If we run docker volume ls -> We would see all the volumes that are present
+
+For testing this, we run the application and the logs would then be stored on our physical machine.
+Browse to http://localhost:8081/app/SignUp and add some new details to confirm the app still works in the same way.
+
+Check the logs and the physical path of the volume:
+=========================
+docker logs 04_signup-web_1
+
+docker inspect 04_signup-web_1 -f '{{(index .Mounts 0).Source}}'
+
+$source = $(docker inspect 04_signup-web_1 -f '{{(index .Mounts 0).Source}}')
+
+ls $source
+
+cat "$source\SignUp.log"
+=========================
+The volume is a local directory - Docker takes care of mounting it into the container.
+
+Removing the container doesn't remove the volume
+Volumes can be managed independently of containers. If there's a VOLUME instruction in the Dockerfile then Docker will create a new volume for each container, but it doesn't get removed when the container is removed.
+
+Delete the web container and confirm the volume data is still there:
+==========================
+docker rm -f 04_signup-web_1
+
+docker volume ls
+
+ls $source
+==========================
+The log file is still there - this could be a database file or a local cache file.
+
+Using a named volume for containers
+These anonymous volumes are useful for making sure data stays around when containers are removed, but you have to find out which volume you want. Instead you can create a named volume with docker volume create or in your Compose spec.
+
+The web container can be configured to write logs to a different location, so we can use an alternative volume:
+
+log4net.config writes to the C:\other-logs directory
+LogMonitorConfig.json is configured to read from both log directories
+signup-web-2.yml uses the new config files and a named volume
+
+log4net.config
+============
+<log4net>
+  <appender name="RollingLogFileAppender" type="log4net.Appender.RollingFileAppender, log4net">
+    <lockingModel type="log4net.Appender.FileAppender+MinimalLock"/>
+    <file value="C:\other-logs\SignUp.log"/>
+    <appendToFile value="true"/>
+    <maxSizeRollBackups value="10"/>
+    <maximumFileSize value="20000000"/>
+    <rollingStyle value="Size"/>
+    <staticLogFileName value="true"/>
+    <layout type="log4net.Layout.PatternLayout">
+      <conversionPattern value="%date [%-2thread] %-5level - %message%newline"/>
+    </layout>
+  </appender>
+  <logger name="SignUp.Log">
+    <level value="DEBUG"/>
+    <appender-ref ref="RollingLogFileAppender"/>
+  </logger>
+</log4net>
+============
+
+signup-web-2.yml
+===============
+version: "3.8"
+
+services:
+
+  signup-web:
+    image: signup-web:04-06
+    build:
+      dockerfile: docker/04-06-persistent-state/signup-web/Dockerfile
+    environment:
+      - Metrics:Server:Enabled=true
+      - Metrics:Application:Enabled=true
+    volumes:
+      - type: bind
+        source: .\04-06\signup-web-config
+        target: C:\web-app\config
+      - type: volume
+        source: signup-web-logs
+        target: C:\other-logs
+    
+volumes:
+  signup-web-logs:
+===============
