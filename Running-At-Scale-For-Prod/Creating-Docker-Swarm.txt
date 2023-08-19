@@ -14,3 +14,30 @@ We need to initialize the Swarm on the node that's going to be our manager node.
 With Docker, we get 2 modes:
     1. Standalone Mode
     2. Swarm mode - Using which we can connect into the cluster and have orchestration capabilities
+
+Command to initialize swarm on Manager node:
+=============
+docker swarm init
+=============
+As output, we will get a join command that we need to run on worker machines to connect it to the manager machine.
+For PROD, it'd be ideally 3 manager nodes. For joining multiple manager nodes, we can get the token using this command:
+
+Command to join Managers(For HA)
+===============================
+docker swarm join-token manager
+===============================
+
+Command to join Workers
+=================================
+docker swarm join-token worker
+=================================
+
+When we have multiple VMs running on same machine, each of them have their own IP addresses. 
+In such cases, its ideal to specify the IP addresss explicitly that the manager should use to join the worker with it.
+
+We can do it using --advertise-addr [IP address] to the join command. So, it looks like this:
+==========================
+docker swarm join [join-token] --advertise-addr [IP Address]
+==========================
+
+
