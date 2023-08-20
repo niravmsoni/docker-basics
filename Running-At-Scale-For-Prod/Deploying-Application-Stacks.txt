@@ -144,3 +144,227 @@ You can't read the contents of a secret in the cluster. The only way to read it 
 
 When we inspect on secret, we will not see the actual data.
 The only way to read this secret is from within the container. They're encrypted by default or in-transit.
+
+DEPLOYING MAIN APPLICATION
+The core parts of the sample application are modelled in 05-03/signup.yml. There's a mix of Windows and Linux components which will be spread around the nodes.The spec includes labels so the front-end components get found by Trafik, and mounts for the config and secret objects.
+
+All the images are published on Docker Hub. Swarm nodes have to be able to access images so they need to be pushed to a registry. These have all been built from the Dockerfiles in the 05-03-deploying-stacks folder - there's nothing new except in the signup-web/start.ps1 which has some logic to set up the config files.
+
+signup.yml
+==========
+version: "3.8"
+
+services:
+  signup-db:
+    image: docker4dotnet/signup-db:05-03
+    networks:
+      - signup-net
+    environment:
+      - SA_PASSWORD_PATH=C:\db\config\sa-password.txt
+    secrets:
+      - source: signup-db-password
+        target: C:\db\config\sa-password.txt
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == windows"
+
+  signup-web:
+    image: docker4dotnet/signup-web:05-03
+    networks:
+      - signup-net
+      - frontend-net
+      - backend-net
+    configs:
+      - source: signup-web-appsettings
+        target: C:\web-app\configs\config.json
+      - source: signup-web-log4net
+        target: C:\web-app\config\log4net.config
+    secrets:
+      - source: signup-web-connectionstrings
+        target: C:\web-app\config\connectionStrings.config
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == windows"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.web.rule=PathPrefix(`/app/`)"
+        - "traefik.http.services.signup-web.loadbalancer.server.port=80"
+
+  homepage:
+    image: docker4dotnet/homepage:05-03
+    networks:
+      - frontend-net
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == windows"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.homepage.rule=PathPrefix(`/`)"
+        - "traefik.http.services.homepage.loadbalancer.server.port=80"
+
+  save-handler:
+    image: docker4dotnet/save-handler:05-03    
+    networks:
+      - signup-net
+      - backend-net
+    secrets:
+      - source: save-handler-connectionstrings
+        target: C:\save-prospect-handler\config\connectionStrings.config
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == windows"
+
+  reference-data-api:
+    image: docker4dotnet/reference-data-api:05-03
+    networks:
+      - signup-net
+      - frontend-net
+    configs:
+      - source: reference-data-config
+        target: /app/configs/config.json
+    secrets:
+      - source: reference-data-secret
+        target: /app/secrets/secret.json
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == linux"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.api.rule=PathPrefix(`/api/`)"
+        - "traefik.http.services.reference-data-api.loadbalancer.server.port=80"
+
+networks:
+  signup-net:
+    external: true
+    name: signup-net
+
+  frontend-net:
+    external: true
+    name: frontend-net
+
+  backend-net:
+    external: true
+    name: backend-net
+
+configs:
+  signup-web-appsettings:
+    external: true
+
+  signup-web-log4net:
+    external: true
+  
+  reference-data-config:
+    external: true
+
+secrets:
+  signup-db-password:
+    external: true
+  
+  signup-web-connectionstrings:
+    external: true
+  
+  save-handler-connectionstrings:
+    external: true
+  
+  reference-data-secret:
+    external: true
+==========
+Explanation:
+    Addition to existing compose file.
+    Added deploy sections to individual containers.
+    For DB: 
+        Source of secret is the secret we created in the previous section.
+        Target = File inside container where we want the secret to be copied.
+        Deploy.placement.Constraint - This should go to NODE with Windows as the OS
+
+        This is much secure
+
+    Signup-Web
+        Attached to multiple networks.
+        Individual config objects source and target mapping.
+        Secrets also configured here. 
+        Deployment constraint - Node with Windows as Platform OS.
+
+    For all networks, configs & secrets, we've set external as true. Kind of acts as pre-requisite for them to be there before the application components are deployed.
+
+DEPLOY ANALYTICS PART OF APP AS SEPARATE STACK
+
+The core app doesn't include the analytics components - those are modelled separately in 05-03/analytics.yml. The services connect to whichever networks they need, so you can model one large application as subsystems in different stacks.
+
+analytics.yml
+===========
+version: "3.8"
+
+services:
+
+  elasticsearch:
+    image: elasticsearch:6.8.12
+    environment:
+      - discovery.type=single-node
+    networks:
+      - analytics-net
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == linux"
+
+  kibana:
+    image: kibana:6.8.12
+    ports:
+      - "5601:5601"
+    networks:
+      - analytics-net
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == linux"
+
+  index-handler:
+    image: docker4dotnet/index-handler:05-03
+    networks:
+      - backend-net
+      - analytics-net
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == linux"
+
+networks:
+  analytics-net:
+    external: true
+    name: analytics-net
+
+  backend-net:
+    external: true
+    name: backend-net
+===========
+Explanation:
+    Entire analytics stack is deployed on linux OS
+
+Deploy the analytics stack:
+=============
+docker network create -d overlay analytics-net
+
+docker stack deploy -c app/05/05-03/analytics.yml analytics
+
+docker stack ps analytics
+=============
+Test the app again with another sign up
+
+Verify the message is processed by both handlers:
+=============
+docker service logs signup_save-handler
+
+docker service logs analytics_index-handler
+=============
+Browse to any node on port 5601 and check the data in Kibana.
+
+Modelling production concerns
+The app is running now, in a container platform which provides high availability and scale.
+
+We're not really making use of those features with our simple app definitions, so next we'll extend them to make the application more suitable for production.
