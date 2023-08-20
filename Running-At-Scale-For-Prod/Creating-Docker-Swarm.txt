@@ -68,3 +68,67 @@ This helps with load balancing as well. If we try to access the IP of server tha
 
 So, even if we browse to worker mode, we will see response coming back to us from container that's currently running on manager node.
 
+Benefits of using service:
+Unlike running in standalone mode, when we do docker run, we get 1 container.
+With service, we can create replica(multiple copies) of it.
+
+Command to replicate existing service running on swarm:
+============
+docker service update --replicas 10 whoami
+============
+We can see that the containers are now spread evenly. Some are running on Linux worker, some on windows worker and some even on manager
+
+If we get the URL of the windows worker and set it to environment variable and then execute curl to the same URL, we would see it is being served by different instances everytime we request it.
+SO, the REQUESTS ARE NICELY LOAD BALANCED.
+
+For checking logs, we do not need to connect to individual containers, instead we could execute service logs and it will scoop out logs coming out of each container.
+========
+docker service logs whoami
+========
+
+For removing service:
+=========
+docker service rm whoami
+=========
+This will remove all tasks.
+
+More information here:
+
+Deploy a basic web app:
+
+docker service create --name whoami -p 8080:80 docker4dotnet/whoami
+
+docker service ps whoami
+
+docker node inspect worker -f '{{.Status.Addr}}'
+
+docker node inspect manager -f '{{.Status.Addr}}'
+There's a single container running the service, but you can browse to port 8080 on any node and the traffic gets routed to the container.
+
+Scale up and more containers will be created. Publishing a port in Swarm mode uses the ingress network, so incoming requests get load-balanced between containers.
+
+Update the service to scale up:
+===================
+docker service update --replicas 10 whoami
+
+docker service ps whoami
+
+url="$(docker node inspect winworker -f '{{.Status.Addr}}'):8080"
+
+echo $url
+
+curl $url
+===================
+This is a multi-architecture .NET Core image, so it can run on Windows or Linux. Repeat the curl command to see different OS responses.
+
+Check the logs and clear up:
+==============
+docker service logs whoami
+
+docker service rm whoami
+
+docker ps
+==============
+Services are first-class citizens which you administer on the manager node. Swarm mode enables extra features in the Docker CLI, but you can only use them on the manager - typically you'd set up a remote connection.
+
+Typically, we won't be using service commands directly. Instead, we would be modelling our application using docker compose and format it to support swarm mode.
