@@ -60,3 +60,11 @@ How to know which node is running my service?
 docker service ps whoami
 ==============
 We can see this is running on Manager node. It could run on either of the nodes. The manager makes that decision to run the service on whichever node has the most AVAILABLE RESOURCES(CPU/Memory etc.)
+
+IMP
+When we publish any port, all the services listen to that port.
+Any traffic coming onto any server in the cluster, will be redirected to container that's listening on that port.
+This helps with load balancing as well. If we try to access the IP of server that's not running any container, it'll redirect us to the container that's listening on the port that's being supplied into.
+
+So, even if we browse to worker mode, we will see response coming back to us from container that's currently running on manager node.
+
