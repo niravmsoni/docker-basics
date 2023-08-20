@@ -40,4 +40,23 @@ We can do it using --advertise-addr [IP address] to the join command. So, it loo
 docker swarm join [join-token] --advertise-addr [IP Address]
 ==========================
 
+We can go individual nodes and then join them to the swarm,
 
+Because Docker Swarm is an abstraction around the containers, it runs the applications as "services". It decides on which worker should it run the container etc.
+
+If we want to deploy a basic whoamI application, we can give it as:
+======================
+docker service create --name whoami -p 8080:80 docker4dotnet/whoami
+======================
+The above mentioned is equivalent to docker run command
+
+When we execute it, we get the output as tasks. This terminology is different as compared to standalone mode
+Task == Container.
+
+Service commands are only applicable on Swarm mode
+
+How to know which node is running my service?
+==============
+docker service ps whoami
+==============
+We can see this is running on Manager node. It could run on either of the nodes. The manager makes that decision to run the service on whichever node has the most AVAILABLE RESOURCES(CPU/Memory etc.)
