@@ -2,3 +2,395 @@ High-availability and Scale
 Orchestrators manage your application containers for you. The Swarm manager monitors all the nodes and their containers. It can take corrective action if there are problems, and when you run apps at scale the cluster takes care of load balancing between containers.
 
 The work we did in section 4 to prepare apps for production all comes into play here - we can verify that the Swarm keeps the components running if containers fail. But we also need to model for high-availability to make sure there's no loss of service while the Swarm is fixing problems.
+
+SELF-HEALING APPS
+The Swarm will keep your services running at the desired scale.
+If a container exits it will be replaced.
+
+In section 4 we used ServiceMonitor to make sure the web container exited if the IIS Windows Service stopped.
+Check that if the IIS process stops, the container is replaced:
+============
+vagrant ssh winworker
+
+powershell
+
+docker ps
+
+docker ps -f "name=web" -q
+
+docker exec $(docker ps -f "name=web" -q) powershell "Stop-Service w3svc"
+
+docker ps
+============
+The Swarm manager creates a new container to replace the exited one - unlike with the restart option in Compose which restarts the same container.
+
+There's a single WebForms container and it has a healthcheck in the image. When the replacement container starts running, it won't receive any traffic until it reports as healthy. Browse to the app in the meantime and you'll get an error.
+It's the same scenario if the container gets removed or the node goes offline - if there's available capacity in the cluster then a replacement container gets scheduled.
+Remove the new web container:
+=========
+docker ps -f "name=web" -q
+
+docker rm -f $(docker ps -f "name=web" -q) 
+
+docker ps
+
+exit
+=========
+Try the web app again and you'll see an error until the new container's healthcheck passes.
+
+To resolve this issue - We should have multiple copies of our service running
+
+ADDING CONTAINERS PROVIDES HA
+
+You can run multiple containers for a service to increase availability. The Swarm load-balances incoming requests across all the healthy containers. If a container fails then the others share the load until the replacement comes online.
+
+Scale up the WebForms service, adding another replica:
+========
+vagrant ssh manager
+
+docker service update signup_signup-web --replicas 2
+
+docker service ls
+
+docker service ps signup_signup-web 
+========
+When both containers are running, try the app again. 
+The SignUp page renders correctly, but if you try to add some data you'll get an error.
+The WebForms app uses an anti-forgery token as a security measure.
+At scale the POST request can be sent to a different container than the one in the GET request, which causes the failure.
+This app isn't really stateless - it needs all requests from a user session to be handled by the same container.
+
+STICKY SESSIONS WITH TRAEFIK
+We can do that using the sticky session feature in Traefik. The reverse proxy will add a cookie to the first response for a session, and then make sure subsequent requests get routed to the same container.
+
+Using sticky sessions just needs a change to the Traefik labels - that's in 05-04/signup-v2.yml.
+
+signup-v2.yml
+=============
+version: "3.8"
+
+services:
+  signup-db:
+    image: docker4dotnet/signup-db:05-03
+    networks:
+      - signup-net
+    environment:
+      - SA_PASSWORD_PATH=C:\db\config\sa-password.txt
+    secrets:
+      - source: signup-db-password
+        target: C:\db\config\sa-password.txt
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == windows"
+
+  signup-web:
+    image: docker4dotnet/signup-web:05-03
+    networks:
+      - signup-net
+      - frontend-net
+      - backend-net
+    configs:
+      - source: signup-web-appsettings
+        target: C:\web-app\configs\config.json
+      - source: signup-web-log4net
+        target: C:\web-app\config\log4net.config
+    secrets:
+      - source: signup-web-connectionstrings
+        target: C:\web-app\config\connectionStrings.config
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - "node.platform.os == windows"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.web.rule=PathPrefix(`/app/`)"
+        - "traefik.http.services.signup-web.loadbalancer.server.port=80"
+        - "traefik.http.services.signup-web.loadbalancer.sticky.cookie=true"
+
+  homepage:
+    image: docker4dotnet/homepage:05-03
+    networks:
+      - frontend-net
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - "node.platform.os == windows"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.homepage.rule=PathPrefix(`/`)"
+        - "traefik.http.services.homepage.loadbalancer.server.port=80"
+
+  save-handler:
+    image: docker4dotnet/save-handler:05-03    
+    networks:
+      - signup-net
+      - backend-net
+    secrets:
+      - source: save-handler-connectionstrings
+        target: C:\save-prospect-handler\config\connectionStrings.config
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == windows"
+
+  reference-data-api:
+    image: docker4dotnet/reference-data-api:05-03
+    networks:
+      - signup-net
+      - frontend-net
+    configs:
+      - source: reference-data-config
+        target: /app/configs/config.json
+    secrets:
+      - source: reference-data-secret
+        target: /app/secrets/secret.json
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - "node.platform.os == linux"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.api.rule=PathPrefix(`/api/`)"
+        - "traefik.http.services.reference-data-api.loadbalancer.server.port=80"
+
+networks:
+  signup-net:
+    external: true
+    name: signup-net
+
+  frontend-net:
+    external: true
+    name: frontend-net
+
+  backend-net:
+    external: true
+    name: backend-net
+
+configs:
+  signup-web-appsettings:
+    external: true
+
+  signup-web-log4net:
+    external: true
+  
+  reference-data-config:
+    external: true
+
+secrets:
+  signup-db-password:
+    external: true
+  
+  signup-web-connectionstrings:
+    external: true
+  
+  save-handler-connectionstrings:
+    external: true
+  
+  reference-data-secret:
+    external: true
+=========
+
+Deploy the update to use sticky sessions:
+=========
+docker stack deploy -c app/05/05-04/signup-v2.yml signup
+
+docker service ls
+=========
+Now try the app, refresh a few times and submit new data. It all works as before (check the cookies in your browser's network tab).
+
+Sticky sessions are often needed for older apps migrating to containers, and it's easy to configure in the reverse proxy (Nginx and other proxies have similar features).
+
+Using this setting => "        - "traefik.http.services.signup-web.loadbalancer.sticky.cookie=true"", we can enable sticky sessions.
+
+CONFIGURE HEALTHCHECKS AND UPDATE PROCESS
+There's lots more to consider when you're running at scale. 05-04/signup-v3.yml adds some more production configuration:
+
+for healthchecks, overriding the frequency and startup period defined in the Docker image
+for rolling updates, setting the order and failure action
+signup-v3.yml
+=========
+version: "3.8"
+
+services:
+  signup-db:
+    image: docker4dotnet/signup-db:05-03
+    networks:
+      - signup-net
+    environment:
+      - SA_PASSWORD_PATH=C:\db\config\sa-password.txt
+    secrets:
+      - source: signup-db-password
+        target: C:\db\config\sa-password.txt
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == windows"
+
+  signup-web:
+    image: docker4dotnet/signup-web:05-03
+    networks:
+      - signup-net
+      - frontend-net
+      - backend-net
+    configs:
+      - source: signup-web-appsettings
+        target: C:\web-app\configs\config.json
+      - source: signup-web-log4net
+        target: C:\web-app\config\log4net.config
+    secrets:
+      - source: signup-web-connectionstrings
+        target: C:\web-app\config\connectionStrings.config
+    healthcheck: 
+      interval: 10s
+      retries: 2
+      start_period: 40s
+    deploy:
+      replicas: 2
+      update_config:
+        order: start-first
+        monitor: 10s
+        failure_action: rollback
+      placement:
+        constraints:
+          - "node.platform.os == windows"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.web.rule=PathPrefix(`/app/`)"
+        - "traefik.http.services.signup-web.loadbalancer.server.port=80"
+        - "traefik.http.services.signup-web.loadbalancer.sticky.cookie=true"
+
+  homepage:
+    image: docker4dotnet/homepage:05-03
+    networks:
+      - frontend-net
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == windows"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.homepage.rule=PathPrefix(`/`)"
+        - "traefik.http.services.homepage.loadbalancer.server.port=80"
+
+  save-handler:
+    image: docker4dotnet/save-handler:05-03    
+    networks:
+      - signup-net
+      - backend-net
+    secrets:
+      - source: save-handler-connectionstrings
+        target: C:\save-prospect-handler\config\connectionStrings.config
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == windows"
+
+  reference-data-api:
+    image: docker4dotnet/reference-data-api:05-03
+    networks:
+      - signup-net
+      - frontend-net
+    configs:
+      - source: reference-data-config
+        target: /app/configs/config.json
+    secrets:
+      - source: reference-data-secret
+        target: /app/secrets/secret.json
+    healthcheck: 
+      interval: 15s
+      retries: 3
+      start_period: 15s
+    deploy:
+      replicas: 2
+      update_config:
+        order: start-first
+        monitor: 10s
+        failure_action: rollback
+      placement:
+        constraints:
+          - "node.platform.os == linux"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.api.rule=PathPrefix(`/api/`)"
+        - "traefik.http.services.reference-data-api.loadbalancer.server.port=80"
+
+networks:
+  signup-net:
+    external: true
+    name: signup-net
+
+  frontend-net:
+    external: true
+    name: frontend-net
+
+  backend-net:
+    external: true
+    name: backend-net
+
+configs:
+  signup-web-appsettings:
+    external: true
+
+  signup-web-log4net:
+    external: true
+  
+  reference-data-config:
+    external: true
+
+secrets:
+  signup-db-password:
+    external: true
+  
+  signup-web-connectionstrings:
+    external: true
+  
+  save-handler-connectionstrings:
+    external: true
+  
+  reference-data-secret:
+    external: true
+======
+Explanation:
+healthcheck
+    Reduced interval to 10s
+    Retries to 2
+    Specified start_period as 40s -> This is to ensure that till first 40 seconds, there are failures expected and do not consider them as container not working as expected.Kind of like exclude whatever output we get back till first 40 seconds
+deploy:
+    replicas: 2 - Ideally, we should not manually update replica. It should come from spec file/.
+    update_config
+        order - start-first
+            - Meaning when we update, start new containers first & if they're working fine then remove older containers.
+        monitor - 10s
+            - Watch for 10 seconds before we do rollback.
+        failure_action
+            - In case of issues, rollback. Meaning delete newly added container and let existing containers handle traffic as-is
+
+Deploy the changes and see how they're rolled out:
+=====
+docker stack deploy -c app/05/05-04/signup-v3.yml signup
+
+docker service ps signup_signup-web
+
+docker service ps signup_reference-data-api
+=====
+New tasks start first, which means an update doesn't reduce capacity.
+If for example, we add new node to the swarm cluster, the services do not rebalance automatically.
+
+Swarm doesn't reschedule work when a new node joins, because that would mean removing healthy containers - potentially that will damage your apps. But you can manually force the service to be rebalanced with an update, which causes the service to be rescheduled.
+
+Update the Linux app services and check the services get rebalanced:
+========
+docker service update signup_reference-data-api --detach --force 
+
+docker service update analytics_index-handler --detach --force
+
+docker service ls
+
+docker node ps worker2
+========
+Explanation: For accomodating containers on new node, we need to detach and force restart.
+Now the new node is running containers.
