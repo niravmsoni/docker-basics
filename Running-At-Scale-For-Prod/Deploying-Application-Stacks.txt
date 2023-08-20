@@ -1,0 +1,146 @@
+Deploying Application Stacks
+Docker Swarm uses the standard Compose specification, with some additional sections to configure Swarm features. 
+Some parts of the spec only apply when you run the app with Compose and others only apply when you run in Swarm - both runtimes ignore sections that aren't relevant.
+
+You deploy applications as stacks in Swarm mode. A stack is defined in a single Compose file, and it can contain definitions for services and for other Docker resources - like config objects, secrets and networks
+
+While running on PROD, there are a few Infra level services that can be shared across different product/services.
+
+Shared components - infrastructure
+In a production cluster you can have some components which are shared between multiple apps. The message queue and reverse proxy from the sample application are good candidates - they're defined in the Compose file infrastructure.yml.
+
+infrastructure.yml
+=================
+version: "3.8"
+
+services:
+
+  proxy:
+    image: traefik:v2.3
+    command:
+      - "--providers.docker"
+      - "--providers.docker.swarmMode=true"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=frontend-net"
+      - "--entrypoints.web.address=:80"
+      - "--api.insecure=true"
+    ports:
+      - "8080:80"
+      - "8088:8080"
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+    networks:
+      - frontend-net
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == linux"
+          - "node.role == manager"
+
+  message-queue:
+    image: nats:2.1
+    networks:
+      - backend-net
+    deploy:
+      placement:
+        constraints:
+          - "node.platform.os == linux"
+
+networks:
+  frontend-net:
+    external: true
+    name: frontend-net
+
+  backend-net:
+    external: true
+    name: backend-net
+=================
+
+Reverse Proxy - traefik
+Binding to Docker Socket. Only look for containers attached to front-end network.
+Constraint - Run on Linux platform on a node that has role of Manager.
+
+message-queue - NATS
+    Constratins -> For message queue deployment, this needs to run on NODE where OS = LINUX
+
+This is a standard Compose file, with the additional deploy section which only applies in Swarm mode. It tells the Swarm that these services should run on Linux nodes in the cluster.
+
+Create the networks and deploy the stack:
+==============
+vagrant ssh manager 
+
+docker network create -d overlay frontend-net
+
+docker network create -d overlay backend-net
+
+cd /docker4dotnet
+
+docker stack deploy -c app/05/05-03/infrastructure.yml infrastructure
+==============
+Explanation:
+Creating separate networks - frontend-net and backend-net
+Creating "overlay" type of network here - Networking driver in docker swarm mode that means all containers can connect to each other irrespective of whichever server they're on provided they're on the same network.
+Here, we're deploying infrastructure.yml as a stack and giving it a name of infrastructure. This is similar to docker compose deployments
+
+Once deployment is done, we can check the stack services using this commands:
+===========
+docker stack ps infrastructure
+docker service logs infrastructure_proxy
+===========
+We can see the servcies running on which Node, what's their state, current state, image its using etc.
+
+STORING APP CONFIGURATION
+===============
+Rather than doing volume mounts, when running in swarm mode, we can use this "config" resource to create config objects. 
+Config objects can be of any foramats - JSON/XML or Binaries as well.
+The Swarm cluster has a distributed database running in the manager node(s). It's where all the stack and service specifications are stored so you can manage apps without needing the Compose file. It's also the storage layer for application config.
+
+Config objects are Docker resources in Swarm mode. You create them from files, do we can store the signup-web-appsettings.json as a config object and mount it into the container filesystem. Config objects can be any format - JSON, XML or even binary files.
+Create all the config objects for the app components:
+========
+docker config create signup-web-appsettings app/05/05-03/configs/signup-web-appsettings.json
+
+docker config create signup-web-log4net app/05/05-03/configs/signup-web-log4net.config
+
+docker config create reference-data-config app/05/05-03/configs/reference-data-config.json
+========
+
+Check the configs and the contents:
+========
+docker config ls
+
+docker config inspect --pretty signup-web-log4net
+
+docker config inspect --pretty reference-data-config
+========
+These are non-sensitive data that can be ok for someone to view.
+
+For storing sensitive information, we can create secrets.
+
+STORING SENSITIVE APP SETTINGS
+Anyone with access to the cluster can see the contents of a config object, so you shouldn't use them to store sensitive data like passwords or API keys. Instead you store those settings in secret objects, which are encrypted in the Swarm.
+
+You create secrets from a file just like config objects, and they can be mounted into the container filesystem. They're encrypted at rest and in transit - the plain text is only visible inside the container.
+Create secrets for the app's sensitive config settings:
+========
+docker secret create signup-db-password app/05/05-03/secrets/signup-db-password
+
+docker secret create signup-web-connectionstrings app/05/05-03/secrets/signup-web-connectionStrings.config
+
+docker secret create save-handler-connectionstrings app/05/05-03/secrets/save-handler-connectionStrings.config
+
+docker secret create reference-data-secret app/05/05-03/secrets/reference-data-secret.json
+========
+Check the secrets and the contents:
+========
+docker secret ls
+
+docker secret inspect --pretty reference-data-secret
+========
+You can't read the contents of a secret in the cluster. The only way to read it is from inside a container which mounts the secret.
+
+When we inspect on secret, we will not see the actual data.
+The only way to read this secret is from within the container. They're encrypted by default or in-transit.
