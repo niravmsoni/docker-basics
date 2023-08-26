@@ -116,3 +116,5 @@ Comparing logging and monitoring
 We now have a centralized log store with a front-end we can use for searching and visualizing logs.
 
 Logs are where you'll look to debug problems when they happen or afterwards - but we're also collecting metrics in our apps and that can help us find problems before they become serious.
+
+Popular .NET Core Stack for logging and monitoring-> ElasticSearch, Kibana and FluentD
