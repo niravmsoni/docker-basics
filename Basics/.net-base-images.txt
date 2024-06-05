@@ -1,3 +1,4 @@
+# Base Images
 The base image is the image you use in the FROM line in your Dockerfile. It was built with a Dockerfile and it comes packaged with software:
 
 nginx is a Linux image with the web server installed
