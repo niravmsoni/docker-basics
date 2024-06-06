@@ -1,3 +1,4 @@
+# Persisting Data
 Intro:
 Docker creates the environment for a container, which includes the filesystem. The C: drive on Windows containers and the root path on Linux containers are composed of multiple sources - the container image, volume mounts and the container's writeable layer.
 Image layers are read-only so they can be shared between images and containers. The writeable layer lets each container modify files without affecting other containers. But the writeable layer has the same lifespan as the container - remove the container and you'll lose all the data it wrote.
