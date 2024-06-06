@@ -1,3 +1,4 @@
+# App Metrics
 Intro:
 Monitoring custom written metrics for applications.
 This will give us more metric in regards to the functional aspects of our application.
