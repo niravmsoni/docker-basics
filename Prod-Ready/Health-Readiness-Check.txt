@@ -1,3 +1,4 @@
+#  Health Checks
 Intro:
 
 Docker monitors the startup process in the container and if that process ends then the container exits. This is a basic liveness check which doesn't ensure the app is actually working - a web server could still be running but returning 503 responses to every request because it's maxed out.
