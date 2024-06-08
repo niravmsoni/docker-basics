@@ -1,3 +1,4 @@
+# Centralized Logging
 We've prepared our Docker images so that the application logs get surfaced as container logs. 
 Now we have lots of containers running we can take advantage of Docker's pluggable logging framework to collect all those logs and store them in a centralized database.
 The EFK stack is a popular choice for Docker and Kubernetes clusters: Elasticsearch is a no-SQL database used to store and index the log entries;
