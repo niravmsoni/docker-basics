@@ -1,3 +1,4 @@
+# Monitoring
 Exposing metrics endpoints from all your app containers is the first step to getting consistent monitoring.
 Next you need to run two other components - a metrics server, which grabs and stores all the metrics from your containers, and a dashboard which presents the data in a usable way.
 We'll do that by running Prometheus and Grafana - the leading tools in this space. 
