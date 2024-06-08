@@ -1,4 +1,4 @@
-Intro:
+# Intro
 Ideally, on PROD, we would have mixed bag of servers(Windows/Liunux), all of them would have Docker installed.
 And they'd be all connected together using Orchestrator.
 3 popular choice:
