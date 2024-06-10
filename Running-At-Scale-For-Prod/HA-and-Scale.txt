@@ -1,4 +1,4 @@
-High-availability and Scale
+# High-availability and Scale
 Orchestrators manage your application containers for you. The Swarm manager monitors all the nodes and their containers. It can take corrective action if there are problems, and when you run apps at scale the cluster takes care of load balancing between containers.
 
 The work we did in section 4 to prepare apps for production all comes into play here - we can verify that the Swarm keeps the components running if containers fail. But we also need to model for high-availability to make sure there's no loss of service while the Swarm is fixing problems.
