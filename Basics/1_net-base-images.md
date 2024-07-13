@@ -6,7 +6,7 @@ nanoserver is a Windows image with just the OS installed
 aspnet is a Windows image with IIS and ASP.NET installed
 Microsoft maintain Docker images for the .NET stack on their own registry, mcr.microsoft.com.
 
-.NET Core image
+## .NET Core image
 
 Pulling runtime images
     - Just has .NET Core installed.
@@ -34,23 +34,25 @@ Pulling ASP.NET Core image
         - For Console app -> It should be based on runtime image
         - For WebAPI -> It should be based on aspnet image
 
-Comparing all the images
+## Comparing all the images
     docker image ls mcr.microsoft.com/dotnet/core/*:3.1
 
     mcr.microsoft.com/dotnet/core/runtime = Smallest. Around 190MB - Used for Console applications. Based on Linux Debian.
     mcr.microsoft.com/dotnet/core/aspnet = Adds Web runtime to above image. So, its just 18 MBs more. Used for web based applications
     mcr.microsoft.com/dotnet/core/sdk = Biggest. It is full blown SDK. NuGet dependencies, build dependencies and running them.
 
-Windows images
+## Windows images
 
 .NET Core is a cross-platform runtime so you can build apps targeted for Windows or Linux. 
 In Docker terms that means you can build Windows and Linux images for .NET Core apps using the same source code.
 Switch to Windows container mode and you can pull Windows versions of the .NET Core images.
 The Windows images have the same names as the Linux versions:
 
+```docker
 docker pull mcr.microsoft.com/dotnet/core/runtime:3.1
 docker pull mcr.microsoft.com/dotnet/core/aspnet:3.1
 docker pull mcr.microsoft.com/dotnet/core/sdk:3.1
+```
 
 There is no difference in the names/tags etc. for windows vs linux based images.
 The Docker Daemon would identify its running on which OS and from the image metadata, it will pull the correct version of the image.
@@ -68,9 +70,11 @@ IMP - However, windows based images are 100MB bigger than its linux counterparts
     - They can only run on Windows OS
     - Use IIS as the server
 
+```docker
 docker pull mcr.microsoft.com/dotnet/framework/runtime:4.8
 docker pull mcr.microsoft.com/dotnet/framework/aspnet:4.8
 docker pull mcr.microsoft.com/dotnet/framework/sdk:4.8
+```
 
 When it comes to .NET image, it does not contain any sort of template code that comes when we create a new project from Visual studio
 Because, the expectation is that no one will run any templated code from a container.
